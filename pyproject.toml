@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "firmauy-mcp-inspect"
+version = "0.1.0"
+description = "Read-only MCP server that brings FirmaUY signature inspection to your AI assistant. Offline, no smart card, no signing, redacted by default."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+  { name = "Carlos A. Planchón", email = "carlosplanchon@cognitialabs.com" }
+]
+keywords = ["mcp", "model-context-protocol", "firmauy", "cedula", "uruguay", "signature", "verification", "inspection", "pades", "xades", "cades"]
+dependencies = [
+  "mcp>=1.2.0,<2",
+]
+
+# Runtime requirement (not a PyPI dependency yet): the `firmauy` CLI must be on PATH, e.g.
+#   uv tool install firmauy
+# Override the executable with the FIRMAUY_BIN environment variable if needed.
+
+[project.scripts]
+firmauy-mcp-inspect = "firmauy_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
