@@ -4,7 +4,10 @@
 
 # firmauy-mcp-inspect
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/carlosplanchon/firmauy-mcp-inspect)
+[![PyPI version](https://img.shields.io/pypi/v/firmauy-mcp-inspect.svg)](https://pypi.org/project/firmauy-mcp-inspect/)
+[![Python versions](https://img.shields.io/pypi/pyversions/firmauy-mcp-inspect.svg)](https://pypi.org/project/firmauy-mcp-inspect/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/carlosplanchon/firmauy-mcp-inspect)
 
 **firmauy-mcp-inspect** is a small, **read-only** [MCP](https://modelcontextprotocol.io/) server that
 lets an AI assistant inspect documents signed with a Uruguayan cédula de identidad through

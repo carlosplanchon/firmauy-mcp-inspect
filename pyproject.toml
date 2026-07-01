@@ -13,6 +13,19 @@ authors = [
   { name = "Carlos A. Planchón", email = "carlosplanchon@cognitialabs.com" }
 ]
 keywords = ["mcp", "model-context-protocol", "firmauy", "cedula", "uruguay", "signature", "verification", "inspection", "pades", "xades", "cades"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Security :: Cryptography",
+  "Topic :: Utilities",
+]
 dependencies = [
   "mcp>=1.2.0,<2",
 ]
