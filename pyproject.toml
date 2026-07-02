@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firmauy-mcp-inspect"
-version = "0.1.4"
+version = "0.1.5"
 description = "Read-only MCP server that brings FirmaUY signature inspection to your AI assistant. Offline, no smart card, no signing, redacted by default."
 readme = "README.md"
 requires-python = ">=3.10"
