@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     swig \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.24 /uv /usr/local/bin/uv
 
 RUN uv tool install firmauy
 
@@ -20,7 +20,11 @@ ENV PATH="/root/.local/bin:${PATH}"
 RUN firmauy --version
 
 COPY tests/ tests/
-RUN uv run pytest tests/ -v
+# Smoke-test the installed package. pytest goes to a throwaway prefix so it never
+# ends up in the site-packages copied into the runtime image.
+RUN uv pip install --target /tmp/testdeps pytest \
+    && PYTHONPATH=/tmp/testdeps python -m pytest tests/ -q \
+    && rm -rf /tmp/testdeps
 
 FROM python:3.12-slim
 
