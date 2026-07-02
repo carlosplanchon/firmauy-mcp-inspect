@@ -9,6 +9,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/firmauy-mcp-inspect.svg)](https://pypi.org/project/firmauy-mcp-inspect/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/carlosplanchon/firmauy-mcp-inspect)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://github.com/emiliano-go/firmauy-mcp-inspect)
 
 **firmauy-mcp-inspect** is a small, **read-only** [MCP](https://modelcontextprotocol.io/) server that
 lets an AI assistant inspect documents signed with a Uruguayan cédula de identidad using
@@ -111,6 +112,43 @@ npx @modelcontextprotocol/inspector firmauy-mcp-inspect
 ```
 
 To work on it from a clone instead, run `uv sync` and then `uv run firmauy-mcp-inspect`.
+
+## Docker
+
+A `Dockerfile` is included for containerized use.
+
+```bash
+docker build -t firmauy-mcp-inspect .
+```
+
+Mount a directory with signed documents and pass any configuration via environment variables:
+
+```bash
+docker run -i --rm \
+  -v /srv/inbox:/srv/inbox \
+  -e FIRMAUY_MCP_ALLOWED_ROOTS=/srv/inbox \
+  -e FIRMAUY_MCP_ALLOWED_EXTENSIONS=.pdf,.xml,.p7s \
+  firmauy-mcp-inspect
+```
+
+The container communicates over stdio (the MCP transport), so pipe JSON-RPC messages or let your MCP client manage the container. For example, with **Claude Desktop**:
+
+```json
+{
+  "mcpServers": {
+    "firmauy-inspect": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "/srv/inbox:/srv/inbox",
+        "-e", "FIRMAUY_MCP_ALLOWED_ROOTS=/srv/inbox",
+        "-e", "FIRMAUY_MCP_ALLOWED_EXTENSIONS=.pdf,.xml,.p7s",
+        "firmauy-mcp-inspect"
+      ]
+    }
+  }
+}
+```
 
 ## Configure your client
 
