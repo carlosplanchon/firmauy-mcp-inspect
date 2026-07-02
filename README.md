@@ -126,22 +126,23 @@ Mount a directory with signed documents and pass any configuration via environme
 
 ```bash
 docker run -i --rm \
-  -v /srv/inbox:/srv/inbox \
+  -v /srv/inbox:/srv/inbox:ro \
   -e FIRMAUY_MCP_ALLOWED_ROOTS=/srv/inbox \
   -e FIRMAUY_MCP_ALLOWED_EXTENSIONS=.pdf,.xml,.p7s \
   ghcr.io/carlosplanchon/firmauy-mcp-inspect:latest
 ```
 
 Paths you ask the tools to inspect must exist **inside** the container, so mount the documents
-(here at the same path on both sides) and point `FIRMAUY_MCP_ALLOWED_ROOTS` at the container path.
-The container speaks the MCP stdio transport (hence `-i`), so let your MCP client manage it.
+(read-only via `:ro`, since the server only ever reads them, at the same path on both sides) and point
+`FIRMAUY_MCP_ALLOWED_ROOTS` at the container path. The container speaks the MCP stdio transport
+(hence `-i`), so let your MCP client manage it.
 
 **Claude Code**
 
 ```bash
 claude mcp add firmauy-inspect -- \
   docker run -i --rm \
-  -v /srv/inbox:/srv/inbox \
+  -v /srv/inbox:/srv/inbox:ro \
   -e FIRMAUY_MCP_ALLOWED_ROOTS=/srv/inbox \
   -e FIRMAUY_MCP_ALLOWED_EXTENSIONS=.pdf,.xml,.p7s \
   ghcr.io/carlosplanchon/firmauy-mcp-inspect:latest
@@ -156,7 +157,7 @@ claude mcp add firmauy-inspect -- \
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-v", "/srv/inbox:/srv/inbox",
+        "-v", "/srv/inbox:/srv/inbox:ro",
         "-e", "FIRMAUY_MCP_ALLOWED_ROOTS=/srv/inbox",
         "-e", "FIRMAUY_MCP_ALLOWED_EXTENSIONS=.pdf,.xml,.p7s",
         "ghcr.io/carlosplanchon/firmauy-mcp-inspect:latest"
