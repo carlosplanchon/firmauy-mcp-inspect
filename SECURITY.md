@@ -24,7 +24,7 @@ The two properties this server exists to provide, in rough order of severity:
 
 - **Escaping the reduced authority.** Any path that reaches a capability the tools do not publish:
   signing, reading the cardholder's identity or photo, or running an arbitrary `firmauy` subcommand.
-  The tools build every argument list in code; a way to influence that list from a tool argument is
+  The tools build every argument list in code, so a way to influence that list from a tool argument is
   a finding.
 - **Leaking personal data to the model.** Any path that puts the signer's name or document number,
   or a token label carrying the holder's name, into a result while `FIRMAUY_MCP_ALLOW_PII` is off.

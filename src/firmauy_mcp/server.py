@@ -60,7 +60,7 @@ except ValueError:  # ditto: a bad override falls back rather than crashing (set
 # closed.
 #   FIRMAUY_MCP_ALLOWED_ROOTS       os.pathsep-separated dirs; confines every file read (the signed
 #                                   file AND a detached signature's original) to those roots.
-#   FIRMAUY_MCP_ALLOWED_EXTENSIONS  comma-separated; restricts the signed file's type only — never
+#   FIRMAUY_MCP_ALLOWED_EXTENSIONS  comma-separated; restricts the signed file's type only, never
 #                                   the arbitrary `original`.
 _ALLOWED_ROOTS = tuple(
     Path(r).expanduser().resolve()
