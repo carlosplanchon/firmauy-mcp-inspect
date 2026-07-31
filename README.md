@@ -35,8 +35,11 @@ deliberately exposes **neither** of them.
 - **No identity or photo.** `fetch-identity` and `fetch-photo` return personal and biometric data.
   That must not flow into a model's context, so those commands are not exposed.
 
-What the model sees from verification is **redacted by default**. The model receives the indication,
-the trust status, and the issuer (a public CA), but not the signer's name or document number.
+What the model sees from verification carries **no personal data**. The model receives the
+indication, the trust status, and the issuer (a public CA), but not the signer's name or document
+number. That is not a default the model can override: no tool takes an argument for it. Letting
+identifying data through is the operator's decision, made once at startup with
+`FIRMAUY_MCP_ALLOW_PII` (see [Configuration](#configuration)).
 
 ### Why a subprocess and not the Python API
 
@@ -46,7 +49,10 @@ the CLI. That would be a mistake here, and the process boundary is deliberate:
 - **The capability stays out of the process.** Importing `firmauy.api` would load signing and
   cardholder-data reading into the same process as the model-driven code, one attribute away.
   Running the CLI means those capabilities are not present at all, which is a stronger guarantee
-  than being present and not called.
+  than being present and not called. To be precise about what this does and does not buy: signing
+  still exists in the `firmauy` executable on the host. What this server guarantees is that it is
+  absent from *this* process and unreachable from it, because the argument list of every call is
+  built in code and no tool accepts a subcommand from its caller.
 - **The `--json` output is a versioned contract.** It carries a `schema_version` and changes far
   more slowly than the young library API.
 - **Timeouts actually work.** `subprocess` kills a hung process. A blocking in-process call cannot
@@ -58,10 +64,13 @@ The cost is a process spawn per call, which is irrelevant next to those three.
 
 | Tool | What it does |
 |---|---|
-| `verify(path, original=None, redact=True)` | Verify one signed file (PDF/PAdES, XAdES XML, detached CMS/.p7s). Returns the indication, per-signature trust and checks. |
-| `verify_batch(paths, redact=True)` | Verify many files. Returns a summary count by indication plus a compact per-file result (indication, trusted, issuing CA). |
+| `verify(path, original=None)` | Verify one signed file (PDF/PAdES, XAdES XML, detached CMS/.p7s). Returns the indication, per-signature trust and checks. |
+| `verify_batch(paths)` | Verify many files. Returns a summary count by indication plus a compact per-file result (indication, trusted, issuing CA). |
 | `validate_ci(number)` | Validate a cédula's check digit (arithmetic consistency only, not an identity check). |
-| `doctor(redact=True)` | Report the local setup status (PC/SC, PKCS#11 module, card, bundled CAs). Every check's status is reported; the card and token details are hidden by default, since some PKCS#11 modules use the cardholder's name as the token label. |
+| `doctor()` | Report the local setup status (PC/SC, PKCS#11 module, card, bundled CAs). Every check's status is reported; the card and token details are withheld, since some PKCS#11 modules use the cardholder's name as the token label. |
+
+None of them takes a redaction argument: whether personal data may reach the model is set by the
+operator at startup, not chosen per call.
 
 `verify_batch` handles self-contained signatures (PDF/PAdES, XAdES XML). A detached `.p7s` needs its
 original file, so verify those one at a time with `verify(path, original=...)`.
@@ -100,6 +109,7 @@ All are optional and configured through environment variables.
 | `FIRMAUY_MCP_MAX_WORKERS` | `8` | Max concurrent verifications in `verify_batch`. Set to `1` for sequential. |
 | `FIRMAUY_MCP_ALLOWED_ROOTS` | none (no limit) | Directories the tools may read from, separated by the OS path separator (`:` on Linux/macOS, `;` on Windows). When set, any path outside them (after resolving symlinks and `..`) is refused. |
 | `FIRMAUY_MCP_ALLOWED_EXTENSIONS` | none (no limit) | Comma-separated types allowed for the **signed** file, e.g. `.pdf,.xml,.p7s`. Does not restrict a detached `.p7s`'s original. |
+| `FIRMAUY_MCP_ALLOW_PII` | `false` | Let identifying data reach the model: the signer's name and document number, and the card and token check details. Off by default, and no tool can override it. Turn it on only if you understand that this data will enter (and usually leave with) the model's context. |
 
 A malformed numeric override is ignored (it falls back to the default) rather than failing startup.
 

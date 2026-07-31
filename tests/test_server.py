@@ -95,14 +95,24 @@ def test_verify_redacts_by_default(monkeypatch, tmp_path):
     assert "--json" in args and "--redact" in args
 
 
-def test_verify_redact_false_omits_flag(monkeypatch, tmp_path):
+def test_verify_omits_the_flag_only_when_the_operator_allows_pii(monkeypatch, tmp_path):
+    # The operator's startup setting is the only thing that lets identifying data through: the
+    # tool takes no argument a model could use to ask for it.
     f = tmp_path / "doc.pdf"; f.write_text("x")
     called = []
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server, "_ALLOW_PII", True)
     monkeypatch.setattr(server.subprocess, "run",
                         _fake_run(stdout='{"indication": "VALID", "signatures": []}', capture=called))
-    server.verify(str(f), redact=False)
+    server.verify(str(f))
     assert "--redact" not in called[0]
+
+
+def test_verify_takes_no_redact_argument():
+    import inspect
+    assert "redact" not in inspect.signature(server.verify).parameters
+    assert "redact" not in inspect.signature(server.verify_batch).parameters
+    assert "redact" not in inspect.signature(server.doctor).parameters
 
 
 def test_verify_detached_passes_original(monkeypatch, tmp_path):
@@ -126,7 +136,7 @@ def test_verify_batch_summarizes_and_groups_issuers(monkeypatch):
                   "signatures": [{"trusted": False, "issuer": {"common_name": "AC MI"}}]},
         "c.pdf": {"error": "file not found: c.pdf"},
     }
-    monkeypatch.setattr(server, "_verify_one", lambda path, original, redact: canned[path])
+    monkeypatch.setattr(server, "_verify_one", lambda path, original: canned[path])
     out = server.verify_batch(["a.pdf", "b.pdf", "c.pdf"])
     assert out["summary"] == {"VALID": 1, "INVALID": 1, "INDETERMINATE": 0, "error": 1}
     by_path = {r["path"]: r for r in out["results"]}
@@ -139,7 +149,7 @@ def test_verify_batch_preserves_input_order(monkeypatch):
     # Results must come back in input order even though verification runs concurrently.
     paths = [f"f{i}.pdf" for i in range(20)]
     monkeypatch.setattr(server, "_verify_one",
-                        lambda path, original, redact: {"indication": "VALID", "signatures": []})
+                        lambda path, original: {"indication": "VALID", "signatures": []})
     out = server.verify_batch(paths)
     assert [r["path"] for r in out["results"]] == paths
     assert out["summary"]["VALID"] == 20
@@ -274,11 +284,12 @@ def test_doctor_redacts_the_token_detail_by_default(monkeypatch):
     assert [c["status"] for c in result["checks"]] == ["PASS", "PASS", "PASS"]
 
 
-def test_doctor_redact_false_returns_the_raw_report(monkeypatch):
+def test_doctor_returns_the_raw_report_only_when_the_operator_allows_pii(monkeypatch):
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=_DOCTOR_JSON))
 
-    result = server.doctor(redact=False)
+    monkeypatch.setattr(server, "_ALLOW_PII", True)
+    result = server.doctor()
 
     assert result["checks"][2]["detail"] == "PEREZ PEREZ JUAN"
 

@@ -13,10 +13,15 @@ signatures and validating cédula check digits. It deliberately does **not** exp
 The server wraps the `firmauy` CLI's stable `--json` interface via subprocess (no shell). FirmaUY also
 ships a public Python API (`firmauy.api`), and importing it here would be a mistake: it would load the
 capability to sign and to read the cardholder's data into this process, where it would sit one
-attribute away from a model-driven code path. Running the CLI keeps those capabilities out of the
-process entirely, which is a stronger boundary than choosing not to call them. See the README for the
-full rationale. Verification redacts the signer's personal data by default, so the model sees the
-indication, trust status and issuer (a public CA) but not the signer's name or document number.
+attribute away from a model-driven code path. The signing capability still exists in the `firmauy`
+executable on the host, of course; what this server guarantees is that it is absent from *this*
+process and unreachable from it, because `_run` builds every argument list itself and no tool takes a
+subcommand from its caller. See the README for the full rationale.
+
+Personal data (the signer's name and document number, and the token label, which some PKCS#11
+modules set to the cardholder's name) is withheld unless the operator sets FIRMAUY_MCP_ALLOW_PII at
+startup. No tool argument can request it: a default the model could override would be a suggestion,
+not a boundary.
 
 Requires the `firmauy` CLI on PATH (e.g. `uv tool install firmauy`); override with FIRMAUY_BIN.
 """
@@ -73,6 +78,14 @@ _ALLOWED_EXTS = frozenset(
     _norm_ext(e) for e in os.environ.get("FIRMAUY_MCP_ALLOWED_EXTENSIONS", "").split(",") if e.strip()
 )
 
+# Whether personal data may reach the model at all. It is the operator's decision, taken once at
+# startup, and no tool argument can change it: a default the model itself could override would not
+# be a boundary, only a suggestion. Off means the signer's name and document number, and the token
+# label (which some PKCS#11 modules set to the cardholder's name), never leave the machine through
+# this server.
+#   FIRMAUY_MCP_ALLOW_PII   1/true/yes/on to let identifying data through; anything else keeps it out.
+_ALLOW_PII = os.environ.get("FIRMAUY_MCP_ALLOW_PII", "").strip().lower() in {"1", "true", "yes", "on"}
+
 
 def _within_allowed(p: Path) -> bool:
     """True if p, canonicalized (symlinks and ``..`` resolved), is inside an allowed root.
@@ -113,7 +126,7 @@ def _run(args: list[str]) -> dict:
     return data
 
 
-def _verify_one(path: str, original: Optional[str], redact: bool) -> dict:
+def _verify_one(path: str, original: Optional[str]) -> dict:
     p = Path(path).expanduser()
     if not _within_allowed(p):
         return {"error": f"path is outside the allowed roots: {path}"}
@@ -122,7 +135,7 @@ def _verify_one(path: str, original: Optional[str], redact: bool) -> dict:
     if not p.is_file():
         return {"error": f"file not found: {path}"}
     args = ["verify", str(p), "--json"]
-    if redact:
+    if not _ALLOW_PII:
         args.append("--redact")
     if original:
         op = Path(original).expanduser()
@@ -133,36 +146,36 @@ def _verify_one(path: str, original: Optional[str], redact: bool) -> dict:
 
 
 @mcp.tool()
-def verify(path: str, original: Optional[str] = None, redact: bool = True) -> dict:
+def verify(path: str, original: Optional[str] = None) -> dict:
     """Verify a signed file (PDF/PAdES, XAdES XML, or detached CMS/.p7s) and report its validity.
 
     Returns the structured result: the overall ``indication`` (VALID / INVALID / INDETERMINATE) and,
     per signature, the trust status, the issuer (a public CA) and each individual check. Chain
     validation is offline, up to the Uruguayan national root, and needs no smart card.
 
+    The signer's personal data (name, document number) is withheld unless the operator has enabled
+    it for this server, so it does not reach the model. That is a startup setting, not something
+    this tool can ask for.
+
     Args:
         path: the signed file to verify.
         original: for a detached ``.p7s`` only, the original file it signs.
-        redact: when true (default) the signer's personal data (name, document number) is hidden, so
-            it never enters the model context. Set it false only if you explicitly need the signer
-            identity.
     """
-    return _verify_one(path, original, redact)
+    return _verify_one(path, original)
 
 
 @mcp.tool()
-def verify_batch(paths: list[str], redact: bool = True) -> dict:
+def verify_batch(paths: list[str]) -> dict:
     """Verify many signed files at once and return a summary plus a compact per-file result.
 
     Built for triaging a folder of signed documents: it counts how many are VALID / INVALID /
     INDETERMINATE / errored, and for each file reports the indication, whether it is trusted to the
     national root, and the issuing CA(s). Use ``verify`` on a single path to get the full per-check
     detail, or to check a detached ``.p7s`` (which needs its original file and is not supported here).
-    The signer's personal data is redacted by default.
+    The signer's personal data is withheld, as in ``verify``.
 
     Args:
         paths: the signed files to verify.
-        redact: hide the signer's personal data (default true).
     """
     summary = {"VALID": 0, "INVALID": 0, "INDETERMINATE": 0, "error": 0}
     results = []
@@ -170,7 +183,7 @@ def verify_batch(paths: list[str], redact: bool = True) -> dict:
     # single-threaded and in input order below, so the summary stays race-free and results stay
     # aligned with `paths`.
     with ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, len(paths) or 1)) as pool:
-        verified = list(pool.map(lambda p: _verify_one(p, None, redact), paths))
+        verified = list(pool.map(lambda p: _verify_one(p, None), paths))
     for path, res in zip(paths, verified):
         if "indication" in res:
             sigs = res.get("signatures", [])
@@ -209,7 +222,7 @@ def validate_ci(number: str) -> dict:
 # A diagnostic check's ``detail`` can carry the cardholder's identity: some PKCS#11 modules use the
 # holder's name as the token label (OpenSC's cédula driver does exactly that, while the proprietary
 # middleware reports a generic "GemP15-1"). The status and the check name carry the diagnostic
-# value, so the detail of those checks is redacted by default, as in verify.
+# value, so the detail of those checks is withheld unless the operator allows PII, as in verify.
 _IDENTITY_CHECK_HINTS = ("token", "cédula", "cedula", "card")
 
 
@@ -229,19 +242,18 @@ def _redact_doctor(data: dict) -> dict:
 
 
 @mcp.tool()
-def doctor(redact: bool = True) -> dict:
+def doctor() -> dict:
     """Report the local FirmaUY setup status (PC/SC stack, PKCS#11 module, card, bundled CAs).
 
     Useful to check whether the environment can verify (and sign). Returns ``{ok, checks}``, where
     each check is a named PASS/WARN/FAIL with a detail.
 
-    Args:
-        redact: when true (default) the detail of the card and token checks is hidden, because some
-            PKCS#11 modules report the cardholder's name as the token label. The status of every
-            check, which is what diagnoses the setup, is always reported.
+    The detail of the card and token checks is withheld unless the operator has enabled personal
+    data for this server, because some PKCS#11 modules report the cardholder's name as the token
+    label. The status of every check, which is what diagnoses the setup, is always reported.
     """
     data = _run(["doctor", "--json"])
-    return _redact_doctor(data) if redact else data
+    return data if _ALLOW_PII else _redact_doctor(data)
 
 
 def main() -> None:
