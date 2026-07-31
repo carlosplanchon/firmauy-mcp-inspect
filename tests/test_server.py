@@ -243,3 +243,47 @@ def test_extension_filter_unset_allows_any_type(monkeypatch, tmp_path):
     out = server.verify(str(f))
     assert out["indication"] == "VALID"
     assert called and called[0][:2] == ["firmauy", "verify"]
+
+
+# --- doctor: the token label can be the cardholder's name -------------------
+
+_DOCTOR_JSON = (
+    '{"ok": true, "checks": ['
+    '{"status": "PASS", "name": "firmauy", "detail": "1.8.0", "fix": null},'
+    '{"status": "PASS", "name": "PKCS#11 module present", "detail": "/usr/lib/libgclib.so", "fix": null},'
+    '{"status": "PASS", "name": "c\\u00e9dula token detected", "detail": "PEREZ PEREZ JUAN", "fix": null}'
+    ']}'
+)
+
+
+def test_doctor_redacts_the_token_detail_by_default(monkeypatch):
+    # OpenSC's cédula driver reports the holder's name as the token label, so that detail must not
+    # reach the model. Every check's status and name still do.
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=_DOCTOR_JSON))
+
+    result = server.doctor()
+
+    assert result["ok"] is True
+    details = {c["name"]: c["detail"] for c in result["checks"]}
+    assert details["cédula token detected"] == "[REDACTED]"
+    assert "PEREZ" not in str(result)
+    # Non-identifying details survive, they are what makes the diagnosis useful.
+    assert details["firmauy"] == "1.8.0"
+    assert details["PKCS#11 module present"] == "/usr/lib/libgclib.so"
+    assert [c["status"] for c in result["checks"]] == ["PASS", "PASS", "PASS"]
+
+
+def test_doctor_redact_false_returns_the_raw_report(monkeypatch):
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=_DOCTOR_JSON))
+
+    result = server.doctor(redact=False)
+
+    assert result["checks"][2]["detail"] == "PEREZ PEREZ JUAN"
+
+
+def test_doctor_redaction_tolerates_an_error_result(monkeypatch):
+    # _run returns {"error": ...} on failure: the redactor must pass it through untouched.
+    monkeypatch.setattr(server, "_FIRMAUY", None)
+    assert "error" in server.doctor()

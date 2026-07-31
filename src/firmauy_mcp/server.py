@@ -10,10 +10,13 @@ signatures and validating cédula check digits. It deliberately does **not** exp
   - reading the cardholder's biographical data or photo (PII and biometrics that must not enter a
     model's context).
 
-The server wraps the `firmauy` CLI's stable `--json` interface via subprocess (no shell), so it stays
-decoupled from FirmaUY's internals. Verification redacts the signer's personal data by default, so the
-model sees the indication, trust status and issuer (a public CA) but not the signer's name or document
-number.
+The server wraps the `firmauy` CLI's stable `--json` interface via subprocess (no shell). FirmaUY also
+ships a public Python API (`firmauy.api`), and importing it here would be a mistake: it would load the
+capability to sign and to read the cardholder's data into this process, where it would sit one
+attribute away from a model-driven code path. Running the CLI keeps those capabilities out of the
+process entirely, which is a stronger boundary than choosing not to call them. See the README for the
+full rationale. Verification redacts the signer's personal data by default, so the model sees the
+indication, trust status and issuer (a public CA) but not the signer's name or document number.
 
 Requires the `firmauy` CLI on PATH (e.g. `uv tool install firmauy`); override with FIRMAUY_BIN.
 """
@@ -207,14 +210,42 @@ def validate_ci(number: str) -> dict:
     return _run(["validate-ci", number, "--json"])
 
 
+# A diagnostic check's ``detail`` can carry the cardholder's identity: some PKCS#11 modules use the
+# holder's name as the token label (OpenSC's cédula driver does exactly that, while the proprietary
+# middleware reports a generic "GemP15-1"). The status and the check name carry the diagnostic
+# value, so the detail of those checks is redacted by default, as in verify.
+_IDENTITY_CHECK_HINTS = ("token", "cédula", "cedula", "card")
+
+
+def _redact_doctor(data: dict) -> dict:
+    checks = data.get("checks")
+    if not isinstance(checks, list):
+        return data                       # an {"error": ...} result, or an unexpected shape
+    redacted = [
+        {**c, "detail": "[REDACTED]"}
+        if isinstance(c, dict)
+        and c.get("detail")
+        and any(h in str(c.get("name", "")).lower() for h in _IDENTITY_CHECK_HINTS)
+        else c
+        for c in checks
+    ]
+    return {**data, "checks": redacted}
+
+
 @mcp.tool()
-def doctor() -> dict:
+def doctor(redact: bool = True) -> dict:
     """Report the local FirmaUY setup status (PC/SC stack, PKCS#11 module, card, bundled CAs).
 
     Useful to check whether the environment can verify (and sign). Returns ``{ok, checks}``, where
-    each check is a named PASS/WARN/FAIL with a detail. No personal data is involved.
+    each check is a named PASS/WARN/FAIL with a detail.
+
+    Args:
+        redact: when true (default) the detail of the card and token checks is hidden, because some
+            PKCS#11 modules report the cardholder's name as the token label. The status of every
+            check, which is what diagnoses the setup, is always reported.
     """
-    return _run(["doctor", "--json"])
+    data = _run(["doctor", "--json"])
+    return _redact_doctor(data) if redact else data
 
 
 def main() -> None:

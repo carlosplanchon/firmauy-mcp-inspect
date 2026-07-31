@@ -38,6 +38,22 @@ deliberately exposes **neither** of them.
 What the model sees from verification is **redacted by default**. The model receives the indication,
 the trust status, and the issuer (a public CA), but not the signer's name or document number.
 
+### Why a subprocess and not the Python API
+
+FirmaUY ships a public Python API (`firmauy.api`) that this server could import instead of running
+the CLI. That would be a mistake here, and the process boundary is deliberate:
+
+- **The capability stays out of the process.** Importing `firmauy.api` would load signing and
+  cardholder-data reading into the same process as the model-driven code, one attribute away.
+  Running the CLI means those capabilities are not present at all, which is a stronger guarantee
+  than being present and not called.
+- **The `--json` output is a versioned contract.** It carries a `schema_version` and changes far
+  more slowly than the young library API.
+- **Timeouts actually work.** `subprocess` kills a hung process. A blocking in-process call cannot
+  be cancelled that way in Python.
+
+The cost is a process spawn per call, which is irrelevant next to those three.
+
 ## Tools
 
 | Tool | What it does |
@@ -45,7 +61,7 @@ the trust status, and the issuer (a public CA), but not the signer's name or doc
 | `verify(path, original=None, redact=True)` | Verify one signed file (PDF/PAdES, XAdES XML, detached CMS/.p7s). Returns the indication, per-signature trust and checks. |
 | `verify_batch(paths, redact=True)` | Verify many files. Returns a summary count by indication plus a compact per-file result (indication, trusted, issuing CA). |
 | `validate_ci(number)` | Validate a cédula's check digit (arithmetic consistency only, not an identity check). |
-| `doctor()` | Report the local setup status (PC/SC, PKCS#11 module, card, bundled CAs). |
+| `doctor(redact=True)` | Report the local setup status (PC/SC, PKCS#11 module, card, bundled CAs). Every check's status is reported; the card and token details are hidden by default, since some PKCS#11 modules use the cardholder's name as the token label. |
 
 `verify_batch` handles self-contained signatures (PDF/PAdES, XAdES XML). A detached `.p7s` needs its
 original file, so verify those one at a time with `verify(path, original=...)`.
@@ -62,6 +78,13 @@ The `firmauy` CLI must be installed and on `PATH`.
 ```bash
 uv tool install firmauy
 firmauy --version
+```
+
+It is an extra rather than a hard dependency, so you can pin the CLI version yourself or reuse one
+you already have. To pull it in with the server instead, install the `cli` extra:
+
+```bash
+uv tool install firmauy-mcp-inspect --with firmauy    # or: pip install "firmauy-mcp-inspect[cli]"
 ```
 
 (Override the executable with the `FIRMAUY_BIN` environment variable if it lives elsewhere.)

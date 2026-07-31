@@ -30,9 +30,13 @@ dependencies = [
   "mcp>=1.2.0,<2",
 ]
 
-# Runtime requirement (not a PyPI dependency yet): the `firmauy` CLI must be on PATH, e.g.
-#   uv tool install firmauy
-# Override the executable with the FIRMAUY_BIN environment variable if needed.
+# The `firmauy` CLI is a runtime requirement, run as a subprocess rather than imported (the process
+# boundary is deliberate: see the README). It is an extra rather than a hard dependency, so you can
+# install and pin the CLI yourself, or point at an existing one with FIRMAUY_BIN.
+#   pip install "firmauy-mcp-inspect[cli]"
+#   uv tool install firmauy-mcp-inspect --with firmauy
+[project.optional-dependencies]
+cli = ["firmauy>=1.7"]
 
 [project.scripts]
 firmauy-mcp-inspect = "firmauy_mcp.server:main"
