@@ -82,7 +82,10 @@ not affiliated with or endorsed by AGESIC.
 
 ## Requirements
 
-The `firmauy` CLI must be installed and on `PATH`.
+The `firmauy` CLI must be installed and on `PATH`, version **1.9 or newer**: that is where each
+diagnostic check declares whether its detail carries the cardholder's data, which is how this server
+decides what to withhold. With an older CLI the `doctor` tool still works, but withholds every
+detail.
 
 ```bash
 uv tool install firmauy

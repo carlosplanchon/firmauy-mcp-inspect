@@ -259,9 +259,11 @@ def test_extension_filter_unset_allows_any_type(monkeypatch, tmp_path):
 
 _DOCTOR_JSON = (
     '{"ok": true, "checks": ['
-    '{"status": "PASS", "name": "firmauy", "detail": "1.8.0", "fix": null},'
-    '{"status": "PASS", "name": "PKCS#11 module present", "detail": "/usr/lib/libgclib.so", "fix": null},'
-    '{"status": "PASS", "name": "c\\u00e9dula token detected", "detail": "PEREZ PEREZ JUAN", "fix": null}'
+    '{"status": "PASS", "name": "firmauy", "detail": "1.9.0", "fix": null, "sensitive": false},'
+    '{"status": "PASS", "name": "PKCS#11 module present", "detail": "/usr/lib/libgclib.so",'
+    ' "fix": null, "sensitive": false},'
+    '{"status": "PASS", "name": "c\\u00e9dula token detected", "detail": "PEREZ PEREZ JUAN",'
+    ' "fix": null, "sensitive": true}'
     ']}'
 )
 
@@ -279,7 +281,7 @@ def test_doctor_redacts_the_token_detail_by_default(monkeypatch):
     assert details["cédula token detected"] == "[REDACTED]"
     assert "PEREZ" not in str(result)
     # Non-identifying details survive, they are what makes the diagnosis useful.
-    assert details["firmauy"] == "1.8.0"
+    assert details["firmauy"] == "1.9.0"
     assert details["PKCS#11 module present"] == "/usr/lib/libgclib.so"
     assert [c["status"] for c in result["checks"]] == ["PASS", "PASS", "PASS"]
 
@@ -298,3 +300,32 @@ def test_doctor_redaction_tolerates_an_error_result(monkeypatch):
     # _run returns {"error": ...} on failure: the redactor must pass it through untouched.
     monkeypatch.setattr(server, "_FIRMAUY", None)
     assert "error" in server.doctor()
+
+
+def test_doctor_redacts_an_unknown_check_that_firmauy_marks_sensitive(monkeypatch):
+    # The reason for trusting firmauy's flag over guessing from the name: a check this server has
+    # never heard of, whose name carries no hint, is still redacted because firmauy said so.
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=(
+        '{"ok": true, "checks": ['
+        '{"status": "PASS", "name": "signing credential detected",'
+        ' "detail": "PEREZ PEREZ JUAN", "fix": null, "sensitive": true}'
+        ']}'
+    )))
+
+    result = server.doctor()
+
+    assert result["checks"][0]["detail"] == "[REDACTED]"
+    assert "PEREZ" not in str(result)
+
+
+def test_doctor_fails_closed_on_a_check_without_the_flag(monkeypatch):
+    # An older firmauy omits the key. Costing a detail is the right failure; leaking one is not.
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=(
+        '{"ok": true, "checks": ['
+        '{"status": "PASS", "name": "firmauy", "detail": "1.8.0", "fix": null}'
+        ']}'
+    )))
+
+    assert server.doctor()["checks"][0]["detail"] == "[REDACTED]"

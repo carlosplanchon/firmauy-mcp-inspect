@@ -10,7 +10,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.24 /uv /usr/local/bin/uv
 
 # Pinned so the image is reproducible: unpinned, two builds of the same tag can bake different
 # CLI versions. Bump it deliberately (docker build --build-arg FIRMAUY_VERSION=... to override).
-ARG FIRMAUY_VERSION=1.8.0
+ARG FIRMAUY_VERSION=1.9.0
 RUN uv tool install "firmauy==${FIRMAUY_VERSION}"
 
 WORKDIR /app

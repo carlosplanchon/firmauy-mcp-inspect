@@ -219,22 +219,21 @@ def validate_ci(number: str) -> dict:
     return _run(["validate-ci", number, "--json"])
 
 
-# A diagnostic check's ``detail`` can carry the cardholder's identity: some PKCS#11 modules use the
-# holder's name as the token label (OpenSC's cédula driver does exactly that, while the proprietary
-# middleware reports a generic "GemP15-1"). The status and the check name carry the diagnostic
-# value, so the detail of those checks is withheld unless the operator allows PII, as in verify.
-_IDENTITY_CHECK_HINTS = ("token", "cédula", "cedula", "card")
-
-
 def _redact_doctor(data: dict) -> dict:
+    """Blank the detail of every check firmauy did not mark as safe to show.
+
+    firmauy tags each diagnostic check with ``sensitive``, saying whether its ``detail`` can carry
+    the cardholder's own data (the token label is the holder's name with some PKCS#11 modules).
+    Trusting that tag beats guessing from the check's name, which would let a future check slip
+    through unredacted. A check without the tag is treated as sensitive, so an older firmauy costs
+    detail rather than privacy.
+    """
     checks = data.get("checks")
     if not isinstance(checks, list):
         return data                       # an {"error": ...} result, or an unexpected shape
     redacted = [
         {**c, "detail": "[REDACTED]"}
-        if isinstance(c, dict)
-        and c.get("detail")
-        and any(h in str(c.get("name", "")).lower() for h in _IDENTITY_CHECK_HINTS)
+        if isinstance(c, dict) and c.get("detail") and c.get("sensitive", True)
         else c
         for c in checks
     ]

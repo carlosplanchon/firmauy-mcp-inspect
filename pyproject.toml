@@ -36,7 +36,9 @@ dependencies = [
 #   pip install "firmauy-mcp-inspect[cli]"
 #   uv tool install firmauy-mcp-inspect --with firmauy
 [project.optional-dependencies]
-cli = ["firmauy>=1.7"]
+# 1.9 is where each diagnostic check states whether its detail carries the cardholder's data, which
+# is how this server decides what to withhold instead of guessing from the check's name.
+cli = ["firmauy>=1.9"]
 
 [project.scripts]
 firmauy-mcp-inspect = "firmauy_mcp.server:main"
