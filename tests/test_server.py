@@ -4,7 +4,6 @@ These mock the `firmauy` subprocess, so they need neither the CLI nor a card. Th
 wrapper, its error handling, the missing-file guard (no shell-out), the redaction default, and the
 batch summary."""
 
-import pytest
 
 from firmauy_mcp import server
 

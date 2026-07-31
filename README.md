@@ -245,6 +245,15 @@ uv run pytest
 The tests mock the `firmauy` subprocess, so they need neither the CLI nor a card. The
 path-sandboxing tests additionally create temporary files and a symlink on the local filesystem.
 
+## Contributing & security
+
+Pull requests are welcome. The mechanics, including the required
+[DCO](https://developercertificate.org/) sign-off (`git commit -s`) and the two properties a change
+must not weaken, are in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+Found a way past the reduced authority, the redaction or the path sandbox? Report it privately:
+see **[SECURITY.md](SECURITY.md)**, not a public issue.
+
 ## License
 
 Apache-2.0.
