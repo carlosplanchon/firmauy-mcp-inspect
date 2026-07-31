@@ -27,7 +27,7 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dependencies = [
-  "mcp>=1.2.0,<2",
+  "mcp>=2,<3",
 ]
 
 # The `firmauy` CLI is a runtime requirement, run as a subprocess rather than imported (the process

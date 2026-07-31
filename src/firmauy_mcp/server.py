@@ -32,18 +32,14 @@ from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 from typing import Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 try:
     _VERSION = _pkg_version("firmauy-mcp-inspect")
 except PackageNotFoundError:  # running from source without an installed distribution
     _VERSION = "0.0.0"
 
-mcp = FastMCP("firmauy-inspect")
-try:  # FastMCP takes no version argument; set it on the wrapped server (a private attribute)
-    mcp._mcp_server.version = _VERSION
-except AttributeError:  # tolerate a future mcp that renames or removes the internal server
-    pass
+mcp = MCPServer("firmauy-inspect", version=_VERSION)
 
 _FIRMAUY = os.environ.get("FIRMAUY_BIN") or shutil.which("firmauy")
 try:
