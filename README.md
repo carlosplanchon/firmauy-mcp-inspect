@@ -64,8 +64,8 @@ The cost is a process spawn per call, which is irrelevant next to those three.
 
 | Tool | What it does |
 |---|---|
-| `verify(path, original=None)` | Verify one signed file (PDF/PAdES, XAdES XML, detached CMS/.p7s). Returns the indication, per-signature trust and checks. |
-| `verify_batch(paths)` | Verify many files. Returns a summary count by indication plus a compact per-file result (indication, trusted, issuing CA). |
+| `verify(path, original=None)` | Verify one signed file (PDF/PAdES, XAdES XML, detached CMS/.p7s). Returns the indication, per-signature trust, checks, and the signature timestamp. |
+| `verify_batch(paths)` | Verify many files. Returns a summary count by indication plus a compact per-file result (indication, trusted, issuing CA, and how that file's timestamps came out). |
 | `validate_ci(number)` | Validate a cédula's check digit (arithmetic consistency only, not an identity check). |
 | `doctor()` | Report the local setup status (PC/SC, PKCS#11 module, card, bundled CAs). Every check's status is reported; the card and token details are withheld, since some PKCS#11 modules use the cardholder's name as the token label. |
 
@@ -90,9 +90,10 @@ where a malformed timestamp token started coming back as INDETERMINATE instead o
 server reports what the CLI concludes, so on older semantics it would be announcing timestamp trust
 the CLI never established.
 
-1.9 is where each diagnostic check declares whether its detail carries the cardholder's data, which
-is how this server decides what to withhold. With an older CLI the `doctor` tool still works, but
-withholds every detail.
+An older CLI is **refused, not tolerated**: the server checks the version once at startup and every
+tool returns an error rather than running. This is deliberate. The packaging requirement only binds
+an install that pulls `firmauy` in as an extra, and the documented way to run this is a separately
+installed CLI or `FIRMAUY_BIN`, neither of which pip ever sees.
 
 ```bash
 uv tool install firmauy

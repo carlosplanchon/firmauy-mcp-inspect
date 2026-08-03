@@ -33,6 +33,7 @@ import os
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 from typing import Optional
@@ -45,6 +46,11 @@ except PackageNotFoundError:  # running from source without an installed distrib
     _VERSION = "0.0.0"
 
 mcp = MCPServer("firmauy-inspect", version=_VERSION)
+
+# The one CLI this server supports. Not a floor with older versions tolerated: it hands the CLI's
+# own JSON to the model and reports what the CLI concludes, so an older one would have it stating
+# conclusions that were never reached. See _cli_version_error.
+_MIN_FIRMAUY = (1, 13, 1)
 
 _FIRMAUY = os.environ.get("FIRMAUY_BIN") or shutil.which("firmauy")
 try:
@@ -129,6 +135,57 @@ def _within_allowed(p: Path) -> bool:
     return any(real.is_relative_to(r) for r in _ALLOWED_ROOTS)
 
 
+@lru_cache(maxsize=1)
+def _cli_version() -> Optional[tuple]:
+    """The version of the ``firmauy`` on PATH, or None when it cannot be determined.
+
+    Asked once. ``firmauy --version`` prints ``firmauy 1.13.1``; anything else, including a binary
+    that will not run, reads as unknown, and an unknown version is refused like an old one.
+    """
+    if not _FIRMAUY:
+        return None
+    try:
+        proc = subprocess.run([_FIRMAUY, "--version"], capture_output=True, text=True,
+                              timeout=_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    parts = proc.stdout.strip().split()
+    if len(parts) < 2:
+        return None
+    try:
+        return tuple(int(n) for n in parts[-1].split("."))
+    except ValueError:
+        return None
+
+
+def _cli_version_error() -> Optional[str]:
+    """Why the CLI on PATH cannot be used, or None when it can.
+
+    This server reports what the CLI concludes, so it only supports the version it was written
+    against. An older one differs in exactly the places this matters: a signature timestamp's
+    integrity, validity and trust were not consistently three separate answers, ``--tsa-ca`` was
+    accepted on commands that ignored it, and a malformed token raised instead of coming back
+    INDETERMINATE. Running on those semantics would mean stating conclusions the CLI never reached.
+
+    Enforced here because the packaging floor does not bind where it matters. ``[cli]`` only
+    constrains an install that pulls firmauy in as an extra, and the documented way to run this is
+    a separately installed CLI or ``FIRMAUY_BIN``, neither of which pip ever sees.
+    """
+    if not _FIRMAUY:
+        return None                 # a different problem, and _run already says so plainly
+    found = _cli_version()
+    if found is None:
+        return (f"Could not determine the version of {_FIRMAUY}. This server requires firmauy "
+                f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer.")
+    if found < _MIN_FIRMAUY:
+        return (f"firmauy {'.'.join(str(n) for n in found)} is too old: this server requires "
+                f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer, which is where a signature "
+                "timestamp's integrity, validity and trust became three separate answers and "
+                "--tsa-ca started applying to every format. Upgrade it, or point FIRMAUY_BIN at a "
+                "newer one.")
+    return None
+
+
 def _run(args: list[str]) -> dict:
     """Run `firmauy <args>` and return the parsed JSON object.
 
@@ -137,6 +194,9 @@ def _run(args: list[str]) -> dict:
     if not _FIRMAUY:
         return {"error": "The 'firmauy' executable was not found on PATH. Install it (for example "
                          "`uv tool install firmauy`) or set the FIRMAUY_BIN environment variable."}
+    stale = _cli_version_error()
+    if stale:
+        return {"error": stale}
     try:
         proc = subprocess.run([_FIRMAUY, *args], capture_output=True, text=True, timeout=_TIMEOUT)
     except subprocess.TimeoutExpired:
@@ -361,12 +421,12 @@ def doctor() -> dict:
 
 def main() -> None:
     """Run the MCP server over stdio."""
-    problem = _tsa_policy_error()
-    if problem:
-        # At startup, not at the first verification. An operator who mistypes the path finds out
-        # while they are still looking at the terminal, rather than from a model reporting an
-        # error about a file that is not the problem.
-        raise SystemExit(problem)
+    # At startup, not at the first call. An operator who mistypes a path or leaves an old CLI on
+    # PATH finds out while they are still looking at the terminal, rather than from a model
+    # reporting an error about a file that is not the problem.
+    for problem in (_cli_version_error(), _tsa_policy_error()):
+        if problem:
+            raise SystemExit(problem)
     mcp.run()
 
 

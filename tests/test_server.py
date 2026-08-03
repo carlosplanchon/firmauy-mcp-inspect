@@ -8,13 +8,33 @@ batch summary."""
 from firmauy_mcp import server
 
 
+import pytest
+
+from firmauy_mcp import server as _server_module
+
+# What a supported CLI answers `--version` with. Every mock serves it, because the server asks
+# before it runs anything: it reports what the CLI concludes, so it will not run one whose
+# conclusions have different semantics.
+_SUPPORTED = "firmauy " + ".".join(str(n) for n in _server_module._MIN_FIRMAUY)
+
+
+@pytest.fixture(autouse=True)
+def _forget_the_cli_version():
+    """The lookup is memoized, so a version mocked in one test must not leak into the next."""
+    server._cli_version.cache_clear()
+    yield
+    server._cli_version.cache_clear()
+
+
 class _Proc:
     def __init__(self, stdout="", stderr="", returncode=0):
         self.stdout, self.stderr, self.returncode = stdout, stderr, returncode
 
 
-def _fake_run(stdout="", stderr="", returncode=0, capture=None):
+def _fake_run(stdout="", stderr="", returncode=0, capture=None, version=_SUPPORTED):
     def run(args, **kw):
+        if "--version" in args:
+            return _Proc(version)           # answered before anything else; never captured
         if capture is not None:
             capture.append(args)
         return _Proc(stdout, stderr, returncode)
@@ -63,6 +83,8 @@ def test_run_timeout(monkeypatch):
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
 
     def boom(args, **kw):
+        if "--version" in args:
+            return _Proc(_SUPPORTED)        # the gate answers; the work is what hangs
         raise server.subprocess.TimeoutExpired(cmd=args, timeout=1)
 
     monkeypatch.setattr(server.subprocess, "run", boom)
@@ -470,3 +492,71 @@ def test_a_malformed_token_is_a_verdict_and_not_a_subprocess_failure(monkeypatch
     assert out["summary"]["INDETERMINATE"] == 1
     assert out["summary"]["error"] == 0
     assert out["results"][0]["timestamps"]["broken"] == 1
+
+
+# --- only the CLI this server was written against -----------------------------
+
+def test_an_old_cli_is_refused_rather_than_trusted(monkeypatch):
+    """This server reports what the CLI concludes. On older semantics --tsa-ca was accepted on
+    commands that ignored it, so it would be stating a conclusion the CLI never reached."""
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"indication": "VALID"}', version="firmauy 1.11.0"))
+
+    out = server._run(["doctor", "--json"])
+
+    assert "error" in out and "too old" in out["error"]
+
+
+def test_a_cli_that_will_not_say_its_version_is_refused_too(monkeypatch):
+    """Unknown reads like old. A binary that does not answer is not one to report conclusions
+    from."""
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"indication": "VALID"}', version="que soy yo"))
+
+    assert "error" in server._run(["doctor", "--json"])
+
+
+def test_the_supported_cli_passes_the_gate(monkeypatch):
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run",
+                        _fake_run(stdout='{"ok": true, "checks": []}'))
+
+    assert "error" not in server._run(["doctor", "--json"])
+
+
+def test_a_newer_cli_is_not_refused(monkeypatch):
+    """A floor, not a pin. The image pins exactly; a local install is free to be ahead."""
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"ok": true, "checks": []}', version="firmauy 2.0.0"))
+
+    assert "error" not in server._run(["doctor", "--json"])
+
+
+def test_the_version_is_asked_once(monkeypatch):
+    """Memoized: a batch of fifty files must not shell out fifty extra times."""
+    asked = []
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+
+    def run(args, **kw):
+        if "--version" in args:
+            asked.append(args)
+            return _Proc(_SUPPORTED)
+        return _Proc('{"ok": true}')
+
+    monkeypatch.setattr(server.subprocess, "run", run)
+    for _ in range(5):
+        server._run(["doctor", "--json"])
+
+    assert len(asked) == 1
+
+
+def test_an_old_cli_stops_the_server_from_starting(monkeypatch):
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(version="firmauy 1.11.0"))
+    monkeypatch.setattr(server.mcp, "run", lambda: pytest.fail("started on an unsupported CLI"))
+
+    with pytest.raises(SystemExit):
+        server.main()

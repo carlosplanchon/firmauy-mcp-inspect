@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firmauy-mcp-inspect"
-version = "0.3.0"
+version = "0.4.0"
 description = "Read-only MCP server that brings FirmaUY signature inspection to your AI assistant. Offline, no smart card, no signing, redacted by default."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,18 +36,15 @@ dependencies = [
 #   pip install "firmauy-mcp-inspect[cli]"
 #   uv tool install firmauy-mcp-inspect --with firmauy
 [project.optional-dependencies]
-# 1.13.1 is the floor because of what this server reports about timestamps. Before it, a signature
-# timestamp's integrity, validity and trust were not consistently three separate answers, --tsa-ca
-# was accepted on commands that ignored it or applied it to XAdES only, and a malformed token raised
-# instead of coming back INDETERMINATE. An inspection server must not announce timestamp trust on
-# those semantics: it would be stating a conclusion the CLI underneath did not actually reach.
+# Only the current CLI is supported, and older ones are refused rather than tolerated. This server
+# hands firmauy's own JSON to the model and reports what firmauy concludes, so on older semantics it
+# would be stating conclusions that were never reached: before 1.13.1 a timestamp's integrity,
+# validity and trust were not consistently three separate answers, --tsa-ca was accepted on commands
+# that ignored it, and a malformed token raised instead of coming back INDETERMINATE.
 #
-# 1.9 remains the floor for the other half of what this server does: it is where each diagnostic
-# check states whether its detail carries the cardholder's data, which is how the doctor tool
-# decides what to withhold instead of guessing from the check's name.
-#
-# Upper bound because 2.0 may move the JSON this server hands the model verbatim.
-cli = ["firmauy>=1.13.1,<2"]
+# Enforced at runtime too (see _cli_version_error), because this bound only binds an install that
+# pulls firmauy in as an extra, and the documented way to run this is a separate CLI or FIRMAUY_BIN.
+cli = ["firmauy>=1.13.1"]
 
 [project.scripts]
 firmauy-mcp-inspect = "firmauy_mcp.server:main"
