@@ -82,10 +82,17 @@ not affiliated with or endorsed by AGESIC.
 
 ## Requirements
 
-The `firmauy` CLI must be installed and on `PATH`, version **1.9 or newer**: that is where each
-diagnostic check declares whether its detail carries the cardholder's data, which is how this server
-decides what to withhold. With an older CLI the `doctor` tool still works, but withholds every
-detail.
+The `firmauy` CLI must be installed and on `PATH`, version **1.13.1 or newer**.
+
+That is where a signature timestamp's integrity, validity and trust became three separate answers,
+where `--tsa-ca` started applying to every format instead of being accepted and ignored on some, and
+where a malformed timestamp token started coming back as INDETERMINATE instead of raising. This
+server reports what the CLI concludes, so on older semantics it would be announcing timestamp trust
+the CLI never established.
+
+1.9 is where each diagnostic check declares whether its detail carries the cardholder's data, which
+is how this server decides what to withhold. With an older CLI the `doctor` tool still works, but
+withholds every detail.
 
 ```bash
 uv tool install firmauy
@@ -113,8 +120,27 @@ All are optional and configured through environment variables.
 | `FIRMAUY_MCP_ALLOWED_ROOTS` | none (no limit) | Directories the tools may read from, separated by the OS path separator (`:` on Linux/macOS, `;` on Windows). When set, any path outside them (after resolving symlinks and `..`) is refused. |
 | `FIRMAUY_MCP_ALLOWED_EXTENSIONS` | none (no limit) | Comma-separated types allowed for the **signed** file, e.g. `.pdf,.xml,.p7s`. Does not restrict a detached `.p7s`'s original. |
 | `FIRMAUY_MCP_ALLOW_PII` | `false` | Let identifying data reach the model: the signer's name and document number, and the card and token check details. Off by default, and no tool can override it. Turn it on only if you understand that this data will enter (and usually leave with) the model's context. |
+| `FIRMAUY_MCP_TSA_CA` | none | Path to a PEM bundle of timestamping authority certificates. When set, a signature timestamp's own chain is validated against it and `timestamp.trusted` becomes `true` or `false`. Unset, it stays `null`: nothing was evaluated, which is not the same as untrusted. Like `ALLOW_PII`, no tool can override it. |
 
 A malformed numeric override is ignored (it falls back to the default) rather than failing startup.
+`FIRMAUY_MCP_TSA_CA` is different: if it is set and the file is not there, the server refuses to
+start. Carrying on would report every timestamp as unvalidated while the setting says otherwise,
+which is wrong and silent.
+
+### Timestamps and who vouches for them
+
+The two trusts in a result answer different questions and neither implies the other.
+`signature.trusted` is the signer's chain to the Uruguayan national root. `signature.timestamp.trusted`
+is the timestamping authority's chain to the roots **you** configured here, and it is three-valued:
+`null` means no roots were configured and nothing was looked at, `false` means they were and it did
+not chain. A file can be `VALID` with a timestamp that is only asserted.
+
+Which authorities count is deliberately yours to decide and not the model's. Letting a tool argument
+pick its own trust roots would let the model define the policy it is being measured against.
+
+Note what this does **not** settle: under Ley 18.600 art. 6 a document makes proof of its date only
+through a provider accredited by the UCE. A timestamp validated against any other authority is real
+cryptographic evidence of when the signature existed, and is not that.
 
 ### Sandboxing (recommended)
 

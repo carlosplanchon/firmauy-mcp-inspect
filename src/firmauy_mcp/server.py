@@ -86,6 +86,36 @@ _ALLOWED_EXTS = frozenset(
 #   FIRMAUY_MCP_ALLOW_PII   1/true/yes/on to let identifying data through; anything else keeps it out.
 _ALLOW_PII = os.environ.get("FIRMAUY_MCP_ALLOW_PII", "").strip().lower() in {"1", "true", "yes", "on"}
 
+# Which timestamping authorities count. An operator setting for the same reason as the one above:
+# choosing whose word is accepted for *when* a document was signed is a trust policy, and a policy
+# the model could pick per call would not be one. So it is not a tool argument, and there is no way
+# to ask for different roots than the ones this server was started with.
+#
+# Unset means a signature timestamp is reported as present and unvalidated, which is honest and is
+# the default because there is no list to assume: public authorities live in the web PKI bundles,
+# and an accredited Uruguayan provider's certificate arrives with the subscription and is in no
+# bundle at all. Whichever applies is the operator's to say.
+#   FIRMAUY_MCP_TSA_CA   path to a PEM bundle of timestamping authority certificates.
+_TSA_CA = os.environ.get("FIRMAUY_MCP_TSA_CA", "").strip()
+
+
+def _tsa_policy_error() -> Optional[str]:
+    """Why the configured timestamp policy cannot be applied, or None when it can.
+
+    Fails closed, unlike the timeout and worker overrides above, which fall back to a default when
+    malformed. Those are performance knobs and a wrong one costs speed. This one decides whether a
+    date is treated as proven, and quietly carrying on without the anchors an operator asked for
+    would report every timestamp as merely asserted while the setting says otherwise. Wrong and
+    silent, which is the worst pair.
+    """
+    if not _TSA_CA:
+        return None
+    if not Path(_TSA_CA).expanduser().is_file():
+        return (f"FIRMAUY_MCP_TSA_CA is set to {_TSA_CA!r}, which is not a readable file. "
+                "Refusing to verify rather than silently reporting every timestamp as "
+                "unvalidated. Fix the path or unset the variable.")
+    return None
+
 
 def _within_allowed(p: Path) -> bool:
     """True if p, canonicalized (symlinks and ``..`` resolved), is inside an allowed root.
@@ -127,6 +157,9 @@ def _run(args: list[str]) -> dict:
 
 
 def _verify_one(path: str, original: Optional[str]) -> dict:
+    problem = _tsa_policy_error()
+    if problem:
+        return {"error": problem}
     p = Path(path).expanduser()
     if not _within_allowed(p):
         return {"error": f"path is outside the allowed roots: {path}"}
@@ -137,6 +170,8 @@ def _verify_one(path: str, original: Optional[str]) -> dict:
     args = ["verify", str(p), "--json"]
     if not _ALLOW_PII:
         args.append("--redact")
+    if _TSA_CA:
+        args += ["--tsa-ca", str(Path(_TSA_CA).expanduser())]
     if original:
         op = Path(original).expanduser()
         if not _within_allowed(op):  # roots apply to the original too; the extension filter does not
@@ -153,15 +188,69 @@ def verify(path: str, original: Optional[str] = None) -> dict:
     per signature, the trust status, the issuer (a public CA) and each individual check. Chain
     validation is offline, up to the Uruguayan national root, and needs no smart card.
 
+    **Two independent trusts, and neither implies the other.** Do not read one as the other:
+
+    - ``signature.trusted`` answers *who signed*: the signer's certificate chained to the Uruguayan
+      national root.
+    - ``signature.timestamp.trusted`` answers *when*: the timestamping authority's own certificate
+      chained to the roots this server's operator configured. It is three-valued. ``null`` means no
+      roots were configured and nothing was evaluated, which is neither a pass nor a failure and is
+      the default. ``false`` means they were evaluated and did not chain. Treating ``null`` as
+      ``false`` reports a problem nobody went looking for.
+
+    A signature can be VALID with a timestamp that is only asserted, and can carry a sound
+    signature with a broken timestamp. ``timestamp`` is ``null`` when the file has no timestamp at
+    all, which is the common case: the standard cédula flow signs without one.
+
+    **Neither trust decides the legal question.** Under Uruguayan law (Ley 18.600 art. 6) a document
+    makes proof of its date only through a timestamping provider accredited by the UCE. A timestamp
+    from any other authority is real cryptographic evidence of when the signature existed and is not
+    that. Whether the configured roots belong to an accredited provider is not visible here, so do
+    not describe a trusted timestamp as qualified or as legally sufficient in Uruguay.
+
     The signer's personal data (name, document number) is withheld unless the operator has enabled
     it for this server, so it does not reach the model. That is a startup setting, not something
-    this tool can ask for.
+    this tool can ask for. So are the timestamping roots: which authorities count is the operator's
+    policy, and there is no argument here to change it.
 
     Args:
         path: the signed file to verify.
         original: for a detached ``.p7s`` only, the original file it signs.
     """
     return _verify_one(path, original)
+
+
+def _timestamp_counts(sigs: list) -> dict:
+    """How this file's signature timestamps came out, as four counts.
+
+    Counts rather than a flag, because the interesting states are not two. A timestamp's own trust
+    is three-valued and squeezing it into a boolean is exactly the mistake the whole thing is built
+    to avoid: ``unvalidated`` means nobody looked, ``untrusted`` means somebody looked and it did
+    not chain, and reporting the first as the second invents a problem while reporting it as the
+    third hides one.
+
+    ``broken`` is separate again: the token itself does not hold up, which says nothing about who
+    issued it. A signature can be VALID with a timestamp that is merely asserted, and until these
+    counts existed the batch gave a model no way to notice that.
+
+    They sum to the number of *stamped* signatures, so comparing against ``signatures`` says how
+    many carry no time evidence at all. That is the common case here: the standard cédula flow
+    signs without a timestamp.
+    """
+    counts = {"trusted": 0, "unvalidated": 0, "untrusted": 0, "broken": 0}
+    for s in sigs:
+        ts = s.get("timestamp")
+        if not isinstance(ts, dict) or not ts.get("present"):
+            continue
+        if not (ts.get("intact") and ts.get("valid")):
+            counts["broken"] += 1
+        elif ts.get("trusted") is True:
+            counts["trusted"] += 1
+        elif ts.get("trusted") is False:
+            counts["untrusted"] += 1
+        else:                       # null: no anchors were configured, so nothing was evaluated
+            counts["unvalidated"] += 1
+    return counts
 
 
 @mcp.tool()
@@ -173,6 +262,20 @@ def verify_batch(paths: list[str]) -> dict:
     national root, and the issuing CA(s). Use ``verify`` on a single path to get the full per-check
     detail, or to check a detached ``.p7s`` (which needs its original file and is not supported here).
     The signer's personal data is withheld, as in ``verify``.
+
+    ``timestamps`` counts how that file's signature timestamps came out, keeping apart the four
+    states that a single flag would blur:
+
+    - ``trusted``: the token holds up and its authority chained to the configured roots.
+    - ``unvalidated``: the token holds up and no roots were configured, so nobody looked. Not a
+      failure, and the default. Do not report it as untrusted.
+    - ``untrusted``: the token holds up and its authority did not chain to those roots.
+    - ``broken``: the token itself does not hold up, which says nothing about who issued it.
+
+    They sum to the number of *stamped* signatures, so comparing against ``signatures`` tells you
+    how many carry no time evidence at all. ``trusted`` on the file itself is the signer's chain and
+    is a different question, as in ``verify``: a file can be VALID with every timestamp merely
+    asserted.
 
     Args:
         paths: the signed files to verify.
@@ -198,6 +301,7 @@ def verify_batch(paths: list[str]) -> dict:
                 "signatures": len(sigs),
                 "trusted": bool(sigs) and all(s.get("trusted") for s in sigs),
                 "issuers": issuers,
+                "timestamps": _timestamp_counts(sigs),
             })
         else:
             summary["error"] += 1
@@ -257,6 +361,12 @@ def doctor() -> dict:
 
 def main() -> None:
     """Run the MCP server over stdio."""
+    problem = _tsa_policy_error()
+    if problem:
+        # At startup, not at the first verification. An operator who mistypes the path finds out
+        # while they are still looking at the terminal, rather than from a model reporting an
+        # error about a file that is not the problem.
+        raise SystemExit(problem)
     mcp.run()
 
 

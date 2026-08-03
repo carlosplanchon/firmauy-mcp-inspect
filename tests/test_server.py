@@ -25,8 +25,8 @@ def _fake_run(stdout="", stderr="", returncode=0, capture=None):
 
 def test_run_parses_json(monkeypatch):
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
-    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout='{"schema_version": 1, "valid": true}'))
-    assert server._run(["validate-ci", "12345672", "--json"]) == {"schema_version": 1, "valid": True}
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout='{"schema_version": 2, "valid": true}'))
+    assert server._run(["validate-ci", "12345672", "--json"]) == {"schema_version": 2, "valid": True}
 
 
 def test_run_firmauy_missing(monkeypatch):
@@ -85,7 +85,7 @@ def test_verify_redacts_by_default(monkeypatch, tmp_path):
     called = []
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server.subprocess, "run", _fake_run(
-        stdout='{"schema_version": 1, "redacted": true, "indication": "VALID", "signatures": []}',
+        stdout='{"schema_version": 2, "redacted": true, "indication": "VALID", "signatures": []}',
         capture=called))
     out = server.verify(str(f))
     assert out["indication"] == "VALID"
@@ -328,3 +328,145 @@ def test_doctor_fails_closed_on_a_check_without_the_flag(monkeypatch):
     )))
 
     assert server.doctor()["checks"][0]["detail"] == "[REDACTED]"
+
+
+# --- the timestamp policy: the operator's, never the model's ------------------
+
+_STAMP = ('{"schema_version": 2, "redacted": true, "indication": "VALID", "signatures": ['
+          '{"indication": "VALID", "trusted": true, "issuer": {"common_name": "MICA"},'
+          ' "timestamp": {"present": true, "intact": true, "valid": true, "trusted": %s,'
+          ' "gen_time": "2026-08-01T06:48:04+00:00", "tsa_common_name": "Una TSA",'
+          ' "detail": "..."}, "checks": []}]}')
+
+
+def test_the_tsa_roots_travel_whenever_the_operator_configured_them(monkeypatch, tmp_path):
+    pem = tmp_path / "tsa.pem"; pem.write_text("-----BEGIN CERTIFICATE-----")
+    f = tmp_path / "doc.pdf"; f.write_text("x")
+    called = []
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server, "_TSA_CA", str(pem))
+    monkeypatch.setattr(server.subprocess, "run",
+                        _fake_run(stdout=_STAMP % "true", capture=called))
+
+    server.verify(str(f))
+
+    args = called[0]
+    assert "--tsa-ca" in args
+    assert args[args.index("--tsa-ca") + 1] == str(pem)
+
+
+def test_without_the_setting_nothing_about_the_tsa_is_claimed(monkeypatch, tmp_path):
+    f = tmp_path / "doc.pdf"; f.write_text("x")
+    called = []
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run",
+                        _fake_run(stdout=_STAMP % "null", capture=called))
+
+    out = server.verify(str(f))
+
+    assert "--tsa-ca" not in called[0]
+    assert out["signatures"][0]["timestamp"]["trusted"] is None
+
+
+def test_a_configured_bundle_that_is_not_there_fails_closed(monkeypatch, tmp_path):
+    """Never carry on unvalidated. Reporting every timestamp as merely asserted while the setting
+    says otherwise is wrong and silent, which is the worst pair."""
+    f = tmp_path / "doc.pdf"; f.write_text("x")
+    called = []
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server, "_TSA_CA", str(tmp_path / "no-existe.pem"))
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=_STAMP % "true", capture=called))
+
+    out = server.verify(str(f))
+
+    assert "error" in out and "FIRMAUY_MCP_TSA_CA" in out["error"]
+    assert called == [], "verified anyway, without the anchors the operator asked for"
+
+
+def test_a_broken_policy_stops_the_server_from_starting(monkeypatch, tmp_path):
+    import pytest
+
+    monkeypatch.setattr(server, "_TSA_CA", str(tmp_path / "no-existe.pem"))
+    monkeypatch.setattr(server.mcp, "run", lambda: pytest.fail("started with a broken policy"))
+
+    with pytest.raises(SystemExit):
+        server.main()
+
+
+def test_the_model_cannot_choose_the_roots():
+    """Letting a tool argument pick trust roots would let the model define the policy it is being
+    measured against. Same boundary as --redact."""
+    import inspect
+
+    for tool in (server.verify, server.verify_batch):
+        params = inspect.signature(tool).parameters
+        assert not any("tsa" in p for p in params), tool.__name__
+
+
+# --- the batch keeps the three-valued trust apart -----------------------------
+
+def test_the_batch_no_longer_throws_the_timestamp_away(monkeypatch, tmp_path):
+    f = tmp_path / "doc.pdf"; f.write_text("x")
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=_STAMP % "true"))
+
+    out = server.verify_batch([str(f)])
+
+    assert out["results"][0]["timestamps"] == {
+        "trusted": 1, "unvalidated": 0, "untrusted": 0, "broken": 0}
+
+
+def test_the_batch_does_not_turn_null_into_false(monkeypatch, tmp_path):
+    """The whole point. Nobody looked is not the same as looked and it did not chain, and a batch
+    that collapses them reports a problem that was never gone looking for."""
+    f = tmp_path / "doc.pdf"; f.write_text("x")
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=_STAMP % "null"))
+
+    counts = server.verify_batch([str(f)])["results"][0]["timestamps"]
+
+    assert counts["unvalidated"] == 1
+    assert counts["untrusted"] == 0
+
+
+def test_the_batch_separates_untrusted_from_broken():
+    sound_but_unanchored = {"timestamp": {"present": True, "intact": True, "valid": True,
+                                          "trusted": False}}
+    broken = {"timestamp": {"present": True, "intact": True, "valid": False, "trusted": False}}
+
+    counts = server._timestamp_counts([sound_but_unanchored, broken])
+
+    assert counts == {"trusted": 0, "unvalidated": 0, "untrusted": 1, "broken": 1}
+
+
+def test_a_file_with_no_timestamp_counts_nothing(monkeypatch, tmp_path):
+    """The common case: the standard cédula flow signs without one. The counts sum to the stamped
+    signatures, so comparing against `signatures` says how many carry no time evidence at all."""
+    f = tmp_path / "doc.pdf"; f.write_text("x")
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 2, "indication": "VALID", "signatures": ['
+               '{"indication": "VALID", "trusted": true, "timestamp": null}]}'))
+
+    row = server.verify_batch([str(f)])["results"][0]
+
+    assert row["timestamps"] == {"trusted": 0, "unvalidated": 0, "untrusted": 0, "broken": 0}
+    assert row["signatures"] == 1
+
+
+def test_a_malformed_token_is_a_verdict_and_not_a_subprocess_failure(monkeypatch, tmp_path):
+    """firmauy 1.13.1 stopped raising on an unreadable TSTInfo. The server must pass that verdict
+    through as a result, not turn it into an error row."""
+    f = tmp_path / "doc.pdf"; f.write_text("x")
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 2, "indication": "INDETERMINATE", "signatures": ['
+               '{"indication": "INDETERMINATE", "trusted": true, "timestamp": '
+               '{"present": true, "intact": false, "valid": false, "trusted": null,'
+               ' "gen_time": null, "detail": "could not parse timestamp: ..."}}]}'))
+
+    out = server.verify_batch([str(f)])
+
+    assert out["summary"]["INDETERMINATE"] == 1
+    assert out["summary"]["error"] == 0
+    assert out["results"][0]["timestamps"]["broken"] == 1
