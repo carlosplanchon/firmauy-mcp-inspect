@@ -50,7 +50,13 @@ mcp = MCPServer("firmauy-inspect", version=_VERSION)
 # The one CLI this server supports. Not a floor with older versions tolerated: it hands the CLI's
 # own JSON to the model and reports what the CLI concludes, so an older one would have it stating
 # conclusions that were never reached. See _cli_version_error.
-_MIN_FIRMAUY = (1, 13, 1)
+#
+# Raised to 1.14.0 because the two verifier escapes that release closed are exactly this server's
+# job: damage past the first field read of a TSTInfo, and an OID naming a hash algorithm nobody
+# implements. Both raised inside pyHanko on 1.13.1, so a crafted file came back here as an error
+# row rather than as a verdict. That is a degraded answer rather than a false one, which is why
+# this is a considered choice and not a security fix.
+_MIN_FIRMAUY = (1, 14, 0)
 
 _FIRMAUY = os.environ.get("FIRMAUY_BIN") or shutil.which("firmauy")
 try:
@@ -139,7 +145,7 @@ def _within_allowed(p: Path) -> bool:
 def _cli_version() -> Optional[tuple]:
     """The version of the ``firmauy`` on PATH, or None when it cannot be determined.
 
-    Asked once. ``firmauy --version`` prints ``firmauy 1.13.1``; anything else, including a binary
+    Asked once. ``firmauy --version`` prints ``firmauy 1.14.0``; anything else, including a binary
     that will not run, reads as unknown, and an unknown version is refused like an old one.
     """
     if not _FIRMAUY:
@@ -178,11 +184,15 @@ def _cli_version_error() -> Optional[str]:
         return (f"Could not determine the version of {_FIRMAUY}. This server requires firmauy "
                 f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer.")
     if found < _MIN_FIRMAUY:
+        # What the message may not do is attach the reason for one floor to a different one. It
+        # used to name the release where integrity, validity and trust became three answers, which
+        # was true while the floor sat there and false the moment it moved. So it says what every
+        # older version has in common instead, which is the only claim that survives a bump.
         return (f"firmauy {'.'.join(str(n) for n in found)} is too old: this server requires "
-                f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer, which is where a signature "
-                "timestamp's integrity, validity and trust became three separate answers and "
-                "--tsa-ca started applying to every format. Upgrade it, or point FIRMAUY_BIN at a "
-                "newer one.")
+                f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer. It reports what the CLI "
+                "concludes, and older ones reach different conclusions about timestamps and "
+                "damaged tokens, so running on them would state findings the CLI never made. "
+                "Upgrade it, or point FIRMAUY_BIN at a newer one.")
     return None
 
 

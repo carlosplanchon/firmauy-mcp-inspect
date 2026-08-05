@@ -560,3 +560,25 @@ def test_an_old_cli_stops_the_server_from_starting(monkeypatch):
 
     with pytest.raises(SystemExit):
         server.main()
+
+
+def test_the_refusal_names_no_release_beyond_the_two_it_is_comparing(monkeypatch):
+    """The refusal used to explain itself by naming the release where a specific thing changed,
+    which was true while the floor sat there and false the moment it moved. Raising the floor left
+    the text attributing that change to a release it never happened in.
+
+    The durable rule is that the message names exactly two versions, the one found and the one
+    required, and explains itself by what every older CLI has in common. Anything else is a fact
+    with an expiry date sitting in a string nobody re-reads when the constant changes.
+    """
+    import re
+
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"indication": "VALID"}', version="firmauy 1.11.0"))
+
+    message = server._run(["doctor", "--json"])["error"]
+
+    required = ".".join(str(n) for n in server._MIN_FIRMAUY)
+    named = set(re.findall(r"\d+\.\d+\.\d+", message))
+    assert named == {"1.11.0", required}, f"the refusal names a release it should not: {named}"

@@ -82,7 +82,7 @@ not affiliated with or endorsed by AGESIC.
 
 ## Requirements
 
-The `firmauy` CLI must be installed and on `PATH`, version **1.13.1 or newer**.
+The `firmauy` CLI must be installed and on `PATH`, version **1.14.0 or newer**.
 
 That is where a signature timestamp's integrity, validity and trust became three separate answers,
 where `--tsa-ca` started applying to every format instead of being accepted and ignored on some, and
