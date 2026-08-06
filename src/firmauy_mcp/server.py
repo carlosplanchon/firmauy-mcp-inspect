@@ -51,12 +51,19 @@ mcp = MCPServer("firmauy-inspect", version=_VERSION)
 # own JSON to the model and reports what the CLI concludes, so an older one would have it stating
 # conclusions that were never reached. See _cli_version_error.
 #
-# Raised to 1.14.0 because the two verifier escapes that release closed are exactly this server's
-# job: damage past the first field read of a TSTInfo, and an OID naming a hash algorithm nobody
-# implements. Both raised inside pyHanko on 1.13.1, so a crafted file came back here as an error
-# row rather than as a verdict. That is a degraded answer rather than a false one, which is why
-# this is a considered choice and not a security fix.
-_MIN_FIRMAUY = (1, 14, 0)
+# Two reasons stack here, and only the second makes this a hard floor rather than a preference.
+#
+# Semantics: 1.14.0 closed the two verifier escapes that are exactly this server's job, damage
+# past the first field read of a TSTInfo and an OID naming a hash algorithm nobody implements.
+# Both raised inside pyHanko on 1.13.1, so a crafted file came back here as an error row rather
+# than as a verdict. Degraded rather than false, so on its own that was a considered choice.
+#
+# Security: firmauy 1.14.3 raised its own floor to cryptography>=50.0.0, closing
+# GHSA-g6cj-pr64-35w5. Anything older declares >=49.0.0 and permits the affected version. This
+# check is the only place that can act on that, because the documented way to run this server is
+# a separately installed CLI or FIRMAUY_BIN, which the `cli` extra's bound never touches. A
+# server that drives a subprocess it knows to be vulnerable, and runs it anyway, is choosing to.
+_MIN_FIRMAUY = (1, 14, 3)
 
 _FIRMAUY = os.environ.get("FIRMAUY_BIN") or shutil.which("firmauy")
 try:
@@ -189,10 +196,10 @@ def _cli_version_error() -> Optional[str]:
         # was true while the floor sat there and false the moment it moved. So it says what every
         # older version has in common instead, which is the only claim that survives a bump.
         return (f"firmauy {'.'.join(str(n) for n in found)} is too old: this server requires "
-                f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer. It reports what the CLI "
-                "concludes, and older ones reach different conclusions about timestamps and "
-                "damaged tokens, so running on them would state findings the CLI never made. "
-                "Upgrade it, or point FIRMAUY_BIN at a newer one.")
+                f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer. Older ones reach different "
+                "conclusions about timestamps and damaged tokens, so this server would state "
+                "findings the CLI never made, and they allow a version of cryptography with a "
+                "published advisory against it. Upgrade it, or point FIRMAUY_BIN at a newer one.")
     return None
 
 
