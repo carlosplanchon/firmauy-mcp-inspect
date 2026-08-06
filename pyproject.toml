@@ -45,7 +45,14 @@ dependencies = [
 #
 # Enforced at runtime too (see _cli_version_error), because this bound only binds an install that
 # pulls firmauy in as an extra, and the documented way to run this is a separate CLI or FIRMAUY_BIN.
-cli = ["firmauy>=1.14.0"]
+#
+# The number here is 1.14.3 while _MIN_FIRMAUY stays 1.14.0, and the two say different things.
+# _MIN_FIRMAUY is about semantics: what a verdict means last changed in 1.14.0, so anything from
+# there on is understood correctly and refusing a working CLI over a patch release would be
+# theatre. This bound is about what pip installs when it resolves the extra, and 1.14.0 declares
+# cryptography>=49.0.0, which permits the version affected by GHSA-g6cj-pr64-35w5. 1.14.3 raises
+# that floor, so asking for it here is how the extra stops resolving a vulnerable tree.
+cli = ["firmauy>=1.14.3"]
 
 [project.scripts]
 firmauy-mcp-inspect = "firmauy_mcp.server:main"
