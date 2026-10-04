@@ -15,6 +15,5 @@ build/
 dist/
 *.egg
 *.egg-info/
-uv.lock
 README.md
 assets/

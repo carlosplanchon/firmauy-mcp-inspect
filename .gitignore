@@ -95,10 +95,11 @@ ipython_config.py
 # Pipfile.lock
 
 # UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-uv.lock
+#   Kept in version control, so it is NOT ignored. The library convention would drop it, and this
+#   is a library on PyPI, where the lock is ignored by anyone installing it as a dependency. But it
+#   also ships as a container image, and there the lock is the only thing standing between "two
+#   builds of this Dockerfile" and "two different servers". Nothing is lost by keeping it: what it
+#   pins is this repository's own environment and the image's, never a consumer's.
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.

@@ -7,7 +7,7 @@ name = "firmauy-mcp-inspect"
 version = "0.6.0"
 description = "Read-only MCP server that brings FirmaUY signature inspection to your AI assistant. Offline, no smart card, no signing, redacted by default."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [
   { name = "Carlos A. Planchón", email = "carlosplanchon@cognitialabs.com" }
@@ -18,7 +18,6 @@ classifiers = [
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -46,11 +45,20 @@ dependencies = [
 # Enforced at runtime too (see _cli_version_error), because this bound only binds an install that
 # pulls firmauy in as an extra, and the documented way to run this is a separate CLI or FIRMAUY_BIN.
 #
-# Raised to 1.14.3 alongside _MIN_FIRMAUY, for a reason the semantic argument does not cover:
-# firmauy 1.14.0 declares cryptography>=49.0.0, which permits the version affected by
-# GHSA-g6cj-pr64-35w5, and 1.14.3 raises that floor to 50.0.0. This bound only helps the install
-# that pulls firmauy in as an extra, which is why the runtime check carries the same number.
-cli = ["firmauy>=1.14.3"]
+# Raised to 1.20.0 alongside _MIN_FIRMAUY, for a reason the semantic argument does not cover:
+# twice firmauy has raised its own floor on a dependency to close a published advisory. 1.14.3
+# took cryptography from >=49.0.0 to >=50.0.0 (GHSA-g6cj-pr64-35w5), and 1.20.0 took urllib3 to
+# >=2.8.0 (GHSA-8988-9cw3-xx77, GHSA-gh4c-6fx4-qh6g, GHSA-vxq7-64xx-v4gw). Anything older permits
+# the affected versions. This bound only helps the install that pulls firmauy in as an extra,
+# which is why the runtime check carries the same number.
+#
+# Capped, unlike _MIN_FIRMAUY, which is deliberately open at the top so a local install can be
+# ahead of the image's pin. The two are not the same decision. That floor governs a CLI somebody
+# chose and can point FIRMAUY_BIN at; this one governs what a resolver is free to drag in behind
+# their back, and a major it picks on its own is the one version nobody has looked at. The runtime
+# contract check is what actually protects the answers either way, so this is the cheaper half of
+# the same guard: it fails at install time, where a version problem costs nothing.
+cli = ["firmauy>=1.20.0,<2"]
 
 [project.scripts]
 firmauy-mcp-inspect = "firmauy_mcp.server:main"

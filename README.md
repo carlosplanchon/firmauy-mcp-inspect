@@ -54,7 +54,10 @@ the CLI. That would be a mistake here, and the process boundary is deliberate:
   absent from *this* process and unreachable from it, because the argument list of every call is
   built in code and no tool accepts a subcommand from its caller.
 - **The `--json` output is a versioned contract.** It carries a `schema_version` and changes far
-  more slowly than the young library API.
+  more slowly than the young library API. The server checks it on every call rather than trusting
+  it: the version floor above is a floor with no ceiling on purpose, so the CLI that passes it may
+  be one written after this server. A payload from a contract it cannot read is refused, and the
+  refusal says so.
 - **Timeouts actually work.** `subprocess` kills a hung process. A blocking in-process call cannot
   be cancelled that way in Python.
 
@@ -82,13 +85,25 @@ not affiliated with or endorsed by AGESIC.
 
 ## Requirements
 
-The `firmauy` CLI must be installed and on `PATH`, version **1.14.0 or newer**.
+The `firmauy` CLI must be installed and on `PATH`, version **1.20.0 or newer**.
 
-That is where a signature timestamp's integrity, validity and trust became three separate answers,
+Two reasons stack there, and only the second makes it a hard floor rather than a preference.
+
+1.14.0 is where a signature timestamp's integrity, validity and trust became three separate answers,
 where `--tsa-ca` started applying to every format instead of being accepted and ignored on some, and
 where a malformed timestamp token started coming back as INDETERMINATE instead of raising. This
 server reports what the CLI concludes, so on older semantics it would be announcing timestamp trust
-the CLI never established.
+the CLI never established. Degraded rather than false, so on its own that was a considered choice.
+
+The floor itself is set by security. Twice firmauy has raised its own floor on a dependency to
+close a published advisory, and anything older permits the affected version. 1.14.3 took
+`cryptography` from `>=49.0.0` to `>=50.0.0`, closing
+[GHSA-g6cj-pr64-35w5](https://github.com/advisories/GHSA-g6cj-pr64-35w5). 1.20.0 took `urllib3` to
+`>=2.8.0`, closing [GHSA-8988-9cw3-xx77](https://github.com/advisories/GHSA-8988-9cw3-xx77),
+[GHSA-gh4c-6fx4-qh6g](https://github.com/advisories/GHSA-gh4c-6fx4-qh6g) and
+[GHSA-vxq7-64xx-v4gw](https://github.com/advisories/GHSA-vxq7-64xx-v4gw). This check is the only
+place that can act on it, since the `cli` extra's bound never touches a separately installed CLI,
+and a server that drives a subprocess it knows to be vulnerable, and runs it anyway, is choosing to.
 
 An older CLI is **refused, not tolerated**: the server checks the version once at startup and every
 tool returns an error rather than running. This is deliberate. The packaging requirement only binds

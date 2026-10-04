@@ -58,12 +58,29 @@ mcp = MCPServer("firmauy-inspect", version=_VERSION)
 # Both raised inside pyHanko on 1.13.1, so a crafted file came back here as an error row rather
 # than as a verdict. Degraded rather than false, so on its own that was a considered choice.
 #
-# Security: firmauy 1.14.3 raised its own floor to cryptography>=50.0.0, closing
-# GHSA-g6cj-pr64-35w5. Anything older declares >=49.0.0 and permits the affected version. This
-# check is the only place that can act on that, because the documented way to run this server is
-# a separately installed CLI or FIRMAUY_BIN, which the `cli` extra's bound never touches. A
-# server that drives a subprocess it knows to be vulnerable, and runs it anyway, is choosing to.
-_MIN_FIRMAUY = (1, 14, 3)
+# Security: firmauy has twice raised its own floor on a dependency to close a published advisory,
+# and a CLI from before either raise permits the affected version. 1.14.3 took cryptography to
+# >=50.0.0, closing GHSA-g6cj-pr64-35w5, where 1.14.0 declared >=49.0.0. 1.20.0 took urllib3 to
+# >=2.8.0, closing GHSA-8988-9cw3-xx77, GHSA-gh4c-6fx4-qh6g and GHSA-vxq7-64xx-v4gw, where 1.18.0
+# and 1.19.0 declared >=2.6 and earlier ones did not constrain it at all. This check is the only
+# place that can act on that, because the documented way to run this server is a separately
+# installed CLI or FIRMAUY_BIN, which the `cli` extra's bound never touches. A server that drives a
+# subprocess it knows to be vulnerable, and runs it anyway, is choosing to.
+_MIN_FIRMAUY = (1, 20, 0)
+
+# The JSON contract this server was written against. firmauy stamps every ``--json`` payload with
+# ``schema_version``, and every field name read below belongs to this one: ``indication``,
+# ``signatures``, ``signer.common_name``, ``timestamp.present`` and the doctor's ``sensitive`` flag.
+#
+# Checked on every call rather than assumed, because the floor above cannot cover it. That floor has
+# no ceiling on purpose (the image pins exactly; a local install is free to be ahead), so the CLI
+# that passes it may be one written after this file. What that costs is not the same in both tools.
+# ``verify`` forwards the payload, so an unreadable one at least arrives visibly strange. But
+# ``verify_batch`` interprets: it counts timestamp states and folds per-signature trust into one
+# answer. A field that moved is not an error there, it is a wrong answer given confidently, every
+# timestamp counted as absent and every signature reported untrusted. Silent and wrong is the pair
+# this server is arranged to avoid, so an unknown contract is refused like an old CLI.
+_SCHEMA_VERSION = 2
 
 _FIRMAUY = os.environ.get("FIRMAUY_BIN") or shutil.which("firmauy")
 try:
@@ -175,10 +192,12 @@ def _cli_version_error() -> Optional[str]:
     """Why the CLI on PATH cannot be used, or None when it can.
 
     This server reports what the CLI concludes, so it only supports the version it was written
-    against. An older one differs in exactly the places this matters: a signature timestamp's
+    against. The oldest ones differ in exactly the places this matters: a signature timestamp's
     integrity, validity and trust were not consistently three separate answers, ``--tsa-ca`` was
     accepted on commands that ignored it, and a malformed token raised instead of coming back
     INDETERMINATE. Running on those semantics would mean stating conclusions the CLI never reached.
+    The rest of the ones below the floor agree on those semantics but permit a dependency version
+    with a published advisory against it (see _MIN_FIRMAUY).
 
     Enforced here because the packaging floor does not bind where it matters. ``[cli]`` only
     constrains an install that pulls firmauy in as an extra, and the documented way to run this is
@@ -195,11 +214,16 @@ def _cli_version_error() -> Optional[str]:
         # used to name the release where integrity, validity and trust became three answers, which
         # was true while the floor sat there and false the moment it moved. So it says what every
         # older version has in common instead, which is the only claim that survives a bump.
+        # The same rule applies to the reasons. Once the floor moved for security rather than
+        # semantics, "older ones reach different conclusions about timestamps" stopped being true
+        # of everything from 1.14.0 up to it. So the two reasons are offered as alternatives, and
+        # every older CLI has at least one of them.
         return (f"firmauy {'.'.join(str(n) for n in found)} is too old: this server requires "
-                f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer. Older ones reach different "
-                "conclusions about timestamps and damaged tokens, so this server would state "
-                "findings the CLI never made, and they allow a version of cryptography with a "
-                "published advisory against it. Upgrade it, or point FIRMAUY_BIN at a newer one.")
+                f"{'.'.join(str(n) for n in _MIN_FIRMAUY)} or newer. Every older one either "
+                "reaches different conclusions about timestamps and damaged tokens, so this "
+                "server would state findings the CLI never made, or permits a dependency version "
+                "with a published advisory against it. Upgrade it, or point FIRMAUY_BIN at a "
+                "newer one.")
     return None
 
 
@@ -230,6 +254,16 @@ def _run(args: list[str]) -> dict:
         return {"error": f"firmauy produced output that is not JSON: {out[:500]}"}
     if not isinstance(data, dict):
         return {"error": f"firmauy produced non-object JSON: {out[:500]}"}
+    # Names no release, for the same reason the version refusal does not: a number that is true
+    # only while a constant sits where it is now becomes a lie the moment somebody moves it.
+    found = data.get("schema_version")
+    if found != _SCHEMA_VERSION:
+        return {"error": (f"firmauy answered with JSON schema_version {found!r}, and this server "
+                          f"reads {_SCHEMA_VERSION}. Its output is a versioned contract, and on a "
+                          "version this server was not written against it would report fields it "
+                          "cannot read, or count ones that moved as absent. Upgrade "
+                          "firmauy-mcp-inspect to one built for that contract, or point "
+                          "FIRMAUY_BIN at a CLI that speaks this one.")}
     return data
 
 

@@ -123,8 +123,8 @@ def test_verify_omits_the_flag_only_when_the_operator_allows_pii(monkeypatch, tm
     called = []
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server, "_ALLOW_PII", True)
-    monkeypatch.setattr(server.subprocess, "run",
-                        _fake_run(stdout='{"indication": "VALID", "signatures": []}', capture=called))
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 2, "indication": "VALID", "signatures": []}', capture=called))
     server.verify(str(f))
     assert "--redact" not in called[0]
 
@@ -182,7 +182,8 @@ def test_validate_ci_passthrough(monkeypatch):
     called = []
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server.subprocess, "run", _fake_run(
-        stdout='{"valid": true, "expected_check_digit": "2"}', capture=called))
+        stdout='{"schema_version": 2, "valid": true, "expected_check_digit": "2"}',
+        capture=called))
     assert server.validate_ci("1.234.567-2")["valid"] is True
     assert called[0][:2] == ["firmauy", "validate-ci"] and "--json" in called[0]
 
@@ -269,8 +270,8 @@ def test_extension_filter_unset_allows_any_type(monkeypatch, tmp_path):
     called = []
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server, "_ALLOWED_EXTS", frozenset())
-    monkeypatch.setattr(server.subprocess, "run",
-                        _fake_run(stdout='{"indication": "VALID", "signatures": []}', capture=called))
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 2, "indication": "VALID", "signatures": []}', capture=called))
     out = server.verify(str(f))
     assert out["indication"] == "VALID"
     assert called and called[0][:2] == ["firmauy", "verify"]
@@ -279,7 +280,7 @@ def test_extension_filter_unset_allows_any_type(monkeypatch, tmp_path):
 # --- doctor: the token label can be the cardholder's name -------------------
 
 _DOCTOR_JSON = (
-    '{"ok": true, "checks": ['
+    '{"schema_version": 2, "ok": true, "checks": ['
     '{"status": "PASS", "name": "firmauy", "detail": "1.9.0", "fix": null, "sensitive": false},'
     '{"status": "PASS", "name": "PKCS#11 module present", "detail": "/usr/lib/libgclib.so",'
     ' "fix": null, "sensitive": false},'
@@ -328,7 +329,7 @@ def test_doctor_redacts_an_unknown_check_that_firmauy_marks_sensitive(monkeypatc
     # never heard of, whose name carries no hint, is still redacted because firmauy said so.
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=(
-        '{"ok": true, "checks": ['
+        '{"schema_version": 2, "ok": true, "checks": ['
         '{"status": "PASS", "name": "signing credential detected",'
         ' "detail": "PEREZ PEREZ JUAN", "fix": null, "sensitive": true}'
         ']}'
@@ -344,7 +345,7 @@ def test_doctor_fails_closed_on_a_check_without_the_flag(monkeypatch):
     # An older firmauy omits the key. Costing a detail is the right failure; leaking one is not.
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout=(
-        '{"ok": true, "checks": ['
+        '{"schema_version": 2, "ok": true, "checks": ['
         '{"status": "PASS", "name": "firmauy", "detail": "1.8.0", "fix": null}'
         ']}'
     )))
@@ -508,6 +509,19 @@ def test_an_old_cli_is_refused_rather_than_trusted(monkeypatch):
     assert "error" in out and "too old" in out["error"]
 
 
+def test_a_cli_with_current_semantics_is_still_refused_below_the_floor(monkeypatch):
+    """The floor is set by security, not only by semantics. 1.19.0 speaks the same contract and
+    postdates the timestamp semantics this server depends on, and it still permits a urllib3 with
+    published advisories against it."""
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 2, "ok": true, "checks": []}', version="firmauy 1.19.0"))
+
+    out = server._run(["doctor", "--json"])
+
+    assert "error" in out and "too old" in out["error"]
+
+
 def test_a_cli_that_will_not_say_its_version_is_refused_too(monkeypatch):
     """Unknown reads like old. A binary that does not answer is not one to report conclusions
     from."""
@@ -521,7 +535,7 @@ def test_a_cli_that_will_not_say_its_version_is_refused_too(monkeypatch):
 def test_the_supported_cli_passes_the_gate(monkeypatch):
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server.subprocess, "run",
-                        _fake_run(stdout='{"ok": true, "checks": []}'))
+                        _fake_run(stdout='{"schema_version": 2, "ok": true, "checks": []}'))
 
     assert "error" not in server._run(["doctor", "--json"])
 
@@ -530,9 +544,66 @@ def test_a_newer_cli_is_not_refused(monkeypatch):
     """A floor, not a pin. The image pins exactly; a local install is free to be ahead."""
     monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
     monkeypatch.setattr(server.subprocess, "run", _fake_run(
-        stdout='{"ok": true, "checks": []}', version="firmauy 2.0.0"))
+        stdout='{"schema_version": 2, "ok": true, "checks": []}', version="firmauy 2.0.0"))
 
     assert "error" not in server._run(["doctor", "--json"])
+
+
+# --- and only the JSON contract it was written against ------------------------
+
+def test_a_contract_this_server_cannot_read_is_refused(monkeypatch):
+    """What the version floor cannot catch. Being open at the top is the point of that floor, so
+    the CLI that walks through it may answer in a shape written after this file."""
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 3, "ok": true, "checks": []}', version="firmauy 2.0.0"))
+
+    out = server._run(["doctor", "--json"])
+
+    assert "error" in out and "schema_version" in out["error"]
+
+
+def test_a_payload_without_a_contract_is_refused_too(monkeypatch):
+    """Unknown reads like wrong, as it does for the version. An unstamped payload is from no
+    contract this server can name, so it is not one to report conclusions from."""
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(stdout='{"ok": true, "checks": []}'))
+
+    assert "error" in server._run(["doctor", "--json"])
+
+
+def test_the_refusal_of_a_contract_names_no_release(monkeypatch):
+    """Same rule as the version refusal: a message that names a release is a fact with an expiry
+    date sitting in a string nobody re-reads when the constant moves."""
+    import re
+
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 3, "ok": true}'))
+
+    message = server._run(["doctor", "--json"])["error"]
+
+    assert not re.findall(r"\d+\.\d+\.\d+", message)
+
+
+def test_a_batch_on_an_unreadable_contract_reports_errors_not_a_clean_sweep(monkeypatch, tmp_path):
+    """The reason the check exists at all, and the case verify would not have shown.
+
+    verify_batch interprets rather than forwards: it counts timestamp states and folds
+    per-signature trust into one answer. Without the contract check, a renamed field reads as
+    absent, so a folder of sound, stamped documents comes back as a tidy summary with no
+    timestamps and nothing trusted. Wrong, and with nothing about it that looks wrong.
+    """
+    f = tmp_path / "doc.pdf"; f.write_text("x")
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 3, "verdict": "VALID", "seals": []}'))
+
+    out = server.verify_batch([str(f)])
+
+    assert out["summary"]["error"] == 1
+    assert out["summary"]["VALID"] == 0
+    assert "error" in out["results"][0]
 
 
 def test_the_version_is_asked_once(monkeypatch):
@@ -544,7 +615,7 @@ def test_the_version_is_asked_once(monkeypatch):
         if "--version" in args:
             asked.append(args)
             return _Proc(_SUPPORTED)
-        return _Proc('{"ok": true}')
+        return _Proc('{"schema_version": 2, "ok": true}')
 
     monkeypatch.setattr(server.subprocess, "run", run)
     for _ in range(5):

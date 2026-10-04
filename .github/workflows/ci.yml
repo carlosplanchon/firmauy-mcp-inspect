@@ -5,6 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+# Third-party actions are pinned to a full commit SHA with the tag they carried beside it, which is
+# what GitHub asks for: a tag is a name its owner can move, and moving it changes what runs here on
+# the next push without anything in this file changing. The comment is what makes an upgrade
+# reviewable, since a bare forty-character hash says nothing about what it is.
+#
+# Nothing here may quietly relock either. With pyproject and uv.lock out of step, `uv sync` rewrites
+# the lockfile and carries on, so a run could resolve dependencies that are in no commit and pass.
+# UV_LOCKED turns that into an error with the lockfile untouched, and it belongs in the everyday CI
+# rather than only in the release, so the mismatch is found on the push that caused it. The image
+# build asks for the same thing its own way, through `uv export --locked`.
+env:
+  UV_LOCKED: "1"
+
 # Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -14,8 +27,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7.6.0
         with:
           enable-cache: true
       - name: Ruff
@@ -27,18 +40,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Matches requires-python (>=3.10) and the classifiers in pyproject.toml.
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # Matches requires-python (>=3.11) and the classifiers in pyproject.toml.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7.6.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
 
-      # uv.lock is not versioned (library convention), so resolve deps fresh each run.
+      # From the lockfile, which is versioned: this ships as a container image as well as a wheel,
+      # and the image is only reproducible if something says which resolution it was built from.
       - name: Install dependencies
         run: uv sync --group dev
 
