@@ -288,7 +288,7 @@ wheels = [
 
 [[package]]
 name = "firmauy"
-version = "1.20.0"
+version = "1.21.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asn1crypto" },
@@ -304,9 +304,9 @@ dependencies = [
     { name = "typer" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/86/44/0c5b5ca859deeaf213474fe2fdab5bfc5f50898bf854eb8b38a90e30e207/firmauy-1.20.0.tar.gz", hash = "sha256:d6d152100bf3fce8b709c7a522fea0a7b54ad95d60fc42da5386c30be48da1df", size = 503974, upload-time = "2026-10-03T23:54:49.923Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1d/af/033110344f4920af22d986212ca35428ac8184098950ec6945bbece7ead6/firmauy-1.21.0.tar.gz", hash = "sha256:944eae11dbceeacb6fd6e3dbefa4ec452629922c83b2122da3b9f49254658e6c", size = 494766, upload-time = "2026-10-04T20:52:42.484Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/ee/5a56db7b7210c4d9deaad670dbdf0c66f232ed3d83791181d04de8b8e249/firmauy-1.20.0-py3-none-any.whl", hash = "sha256:3b97a39ef32e0f3dc8fad5838bec96eb0bd5bcee2cdf24dd7c9ff9b8d3130ade", size = 165638, upload-time = "2026-10-03T23:54:48.639Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/d1/2c348d791bcf1553e8a702aeb092ff5e6b812dd183d7a2b5f6f0a72d0f6a/firmauy-1.21.0-py3-none-any.whl", hash = "sha256:acbf6ee80ddbdbca08211c00d31d606d3b78e2873fa5d726ba6027037033cc7a", size = 171072, upload-time = "2026-10-04T20:52:40.931Z" },
 ]
 
 [[package]]
@@ -329,7 +329,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "firmauy", marker = "extra == 'cli'", specifier = ">=1.20.0,<2" },
+    { name = "firmauy", marker = "extra == 'cli'", specifier = ">=1.21.0,<2" },
     { name = "mcp", specifier = ">=2,<3" },
 ]
 provides-extras = ["cli"]
@@ -351,8 +351,8 @@ name = "httpcore2"
 version = "2.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11" },
-    { name = "truststore" },
+    { name = "h11", marker = "python_full_version < '3.12' or python_full_version >= '3.14' or sys_platform != 'emscripten'" },
+    { name = "truststore", marker = "python_full_version < '3.12' or python_full_version >= '3.14' or sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cb/f3/1db7aa2bc2524062192bb0e0323969492d1883152a232fe36eea65f4e35c/httpcore2-2.13.1.tar.gz", hash = "sha256:e0aa977abe17e69a3b820a24542a6fa88702676d83880b8d194dcd18408e5103", size = 68071, upload-time = "2026-09-23T07:47:22.372Z" }
 wheels = [
@@ -1311,8 +1311,8 @@ name = "uvicorn"
 version = "0.49.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click" },
-    { name = "h11" },
+    { name = "click", marker = "python_full_version < '3.12' or python_full_version >= '3.14' or sys_platform != 'emscripten'" },
+    { name = "h11", marker = "python_full_version < '3.12' or python_full_version >= '3.14' or sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c4/1f/fa18009dea8469069cca78a4e877a008ab78f08b064bfc9ab891579077ff/uvicorn-0.49.0.tar.gz", hash = "sha256:ebf4271aa580d9de97f93192d4595176df6e91f9aae919ca73e4fc07df1e66a3", size = 91284, upload-time = "2026-06-03T22:01:30.448Z" }
 wheels = [

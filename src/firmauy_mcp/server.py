@@ -66,7 +66,12 @@ mcp = MCPServer("firmauy-inspect", version=_VERSION)
 # place that can act on that, because the documented way to run this server is a separately
 # installed CLI or FIRMAUY_BIN, which the `cli` extra's bound never touches. A server that drives a
 # subprocess it knows to be vulnerable, and runs it anyway, is choosing to.
-_MIN_FIRMAUY = (1, 20, 0)
+#
+# Platform: 1.21.0 is the first firmauy that runs on Windows. Before it, ``doctor`` looked for
+# pcscd and a Linux PKCS#11 path there, so on Windows it reported a broken setup that was fine.
+# Linux behaviour and output are unchanged from 1.20.0, so the raise costs a Linux install only
+# an upgrade, and one floor for every platform is simpler to state than one per platform.
+_MIN_FIRMAUY = (1, 21, 0)
 
 # The JSON contract this server was written against. firmauy stamps every ``--json`` payload with
 # ``schema_version``, and every field name read below belongs to this one: ``indication``,
@@ -83,6 +88,16 @@ _MIN_FIRMAUY = (1, 20, 0)
 _SCHEMA_VERSION = 2
 
 _FIRMAUY = os.environ.get("FIRMAUY_BIN") or shutil.which("firmauy")
+
+# How every firmauy subprocess is run, so its output is UTF-8 on every platform. Left alone, firmauy
+# writes its JSON in the locale's encoding, which on Windows is the ANSI code page (cp1252 on a
+# Spanish or English install): a doctor row reading "cédula" arrives as the single byte 0xE9. That
+# decoded correctly only because this process happened to guess the same code page, and a signer
+# name with a character the code page lacks could not be written at all. PYTHONUTF8 makes the CLI
+# write UTF-8, and decoding as UTF-8 here makes the pair agree by construction rather than by luck.
+# errors="replace" keeps a stray byte from raising: _run's JSON checks turn it into a clean error.
+_SUBPROCESS_TEXT = {"encoding": "utf-8", "errors": "replace",
+                    "env": {**os.environ, "PYTHONUTF8": "1"}}
 try:
     _TIMEOUT = float(os.environ.get("FIRMAUY_MCP_TIMEOUT", "60"))
 except ValueError:  # a malformed override must not crash startup; fall back to the default
@@ -175,8 +190,8 @@ def _cli_version() -> Optional[tuple]:
     if not _FIRMAUY:
         return None
     try:
-        proc = subprocess.run([_FIRMAUY, "--version"], capture_output=True, text=True,
-                              timeout=_TIMEOUT)
+        proc = subprocess.run([_FIRMAUY, "--version"], capture_output=True, timeout=_TIMEOUT,
+                              **_SUBPROCESS_TEXT)
     except (OSError, subprocess.TimeoutExpired):
         return None
     parts = proc.stdout.strip().split()
@@ -239,7 +254,8 @@ def _run(args: list[str]) -> dict:
     if stale:
         return {"error": stale}
     try:
-        proc = subprocess.run([_FIRMAUY, *args], capture_output=True, text=True, timeout=_TIMEOUT)
+        proc = subprocess.run([_FIRMAUY, *args], capture_output=True, timeout=_TIMEOUT,
+                              **_SUBPROCESS_TEXT)
     except subprocess.TimeoutExpired:
         return {"error": f"firmauy timed out after {_TIMEOUT:g}s."}
     except OSError as exc:

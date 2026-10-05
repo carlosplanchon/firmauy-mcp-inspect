@@ -49,6 +49,21 @@ def test_run_parses_json(monkeypatch):
     assert server._run(["validate-ci", "12345672", "--json"]) == {"schema_version": 2, "valid": True}
 
 
+def test_run_asks_for_utf8_on_every_call(monkeypatch):
+    # On Windows firmauy otherwise writes the ANSI code page, so both ends have to be told: the CLI
+    # through PYTHONUTF8, and this side by decoding as UTF-8 rather than as the locale guesses.
+    seen = []
+    def run(args, **kw):
+        seen.append(kw)
+        return _Proc(_SUPPORTED if "--version" in args else '{"schema_version": 2}')
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server.subprocess, "run", run)
+    server._run(["doctor", "--json"])
+    assert len(seen) == 2                   # the version check and the call itself
+    for kw in seen:
+        assert kw["encoding"] == "utf-8" and kw["env"]["PYTHONUTF8"] == "1"
+
+
 def test_run_firmauy_missing(monkeypatch):
     monkeypatch.setattr(server, "_FIRMAUY", None)
     out = server._run(["doctor", "--json"])
@@ -223,7 +238,12 @@ def test_within_allowed_rejects_sibling_prefix(monkeypatch, tmp_path):
 def test_within_allowed_rejects_symlink_escape(monkeypatch, tmp_path):
     root = tmp_path / "root"; root.mkdir()
     outside = tmp_path / "outside.pdf"; outside.write_text("x")
-    link = root / "link.pdf"; link.symlink_to(outside)
+    link = root / "link.pdf"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        # Windows only lets an administrator, or anyone with Developer Mode on, create a symlink.
+        pytest.skip("this account cannot create symlinks")
     monkeypatch.setattr(server, "_ALLOWED_ROOTS", (root.resolve(),))
     # The symlink lives inside the root but resolves to a target outside it.
     assert server._within_allowed(link) is False
