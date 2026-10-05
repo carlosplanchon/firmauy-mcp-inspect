@@ -85,9 +85,10 @@ not affiliated with or endorsed by AGESIC.
 
 ## Requirements
 
-The `firmauy` CLI must be installed and on `PATH`, version **1.20.0 or newer**.
+The `firmauy` CLI must be installed and on `PATH`, version **1.21.0 or newer**. It runs on Linux
+and on Windows (x64).
 
-Two reasons stack there, and only the second makes it a hard floor rather than a preference.
+Three reasons stack there, and only the last two make it a hard floor rather than a preference.
 
 1.14.0 is where a signature timestamp's integrity, validity and trust became three separate answers,
 where `--tsa-ca` started applying to every format instead of being accepted and ignored on some, and
@@ -104,6 +105,10 @@ close a published advisory, and anything older permits the affected version. 1.1
 [GHSA-vxq7-64xx-v4gw](https://github.com/advisories/GHSA-vxq7-64xx-v4gw). This check is the only
 place that can act on it, since the `cli` extra's bound never touches a separately installed CLI,
 and a server that drives a subprocess it knows to be vulnerable, and runs it anyway, is choosing to.
+
+1.21.0 is the first release that runs on Windows. Before it, `doctor` looked for `pcscd` and a Linux
+PKCS#11 module there and reported a broken setup on a machine that was fine. On Linux it behaves
+exactly like 1.20.0, so the raise costs a Linux install nothing but the upgrade.
 
 An older CLI is **refused, not tolerated**: the server checks the version once at startup and every
 tool returns an error rather than running. This is deliberate. The packaging requirement only binds
@@ -169,6 +174,13 @@ export FIRMAUY_MCP_ALLOWED_ROOTS="/srv/inbox/signed"
 export FIRMAUY_MCP_ALLOWED_EXTENSIONS=".pdf,.xml,.p7s"
 ```
 
+On Windows, in PowerShell (separate several roots with `;`):
+
+```powershell
+$env:FIRMAUY_MCP_ALLOWED_ROOTS = "D:\inbox\signed"
+$env:FIRMAUY_MCP_ALLOWED_EXTENSIONS = ".pdf,.xml,.p7s"
+```
+
 Containment is checked on the resolved, canonical path (symlinks and `..` followed), so it is not
 fooled by traversal, symlink escapes, or sibling directories sharing a name prefix. The root
 allowlist also covers the `original` of a detached `.p7s`. The extension allowlist does not, because
@@ -214,6 +226,10 @@ Paths you ask the tools to inspect must exist **inside** the container, so mount
 (read-only via `:ro`, since the server only ever reads them, at the same path on both sides) and point
 `FIRMAUY_MCP_ALLOWED_ROOTS` at the container path. The container speaks the MCP stdio transport
 (hence `-i`), so let your MCP client manage it.
+
+The image is Linux. On Windows, installing with `uv tool install` (above) is the simpler route: the
+server and the CLI both run natively there, and the paths a model asks about are the ones you see,
+with no mount to map them through.
 
 **Claude Code**
 

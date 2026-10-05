@@ -28,8 +28,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.24@sha256:99ea34acedc870ba4ad11a1f540a1c04
 # The pin can never sit below _MIN_FIRMAUY in server.py, which refuses an older CLI: an image pinned
 # under the floor builds cleanly and then refuses every call. And the date has to fall after the
 # pinned release, or --exclude-newer hides it and the build fails.
-ARG FIRMAUY_VERSION=1.20.0
-ARG FIRMAUY_RESOLVED_AT=2026-10-04T00:00:00Z
+ARG FIRMAUY_VERSION=1.21.0
+ARG FIRMAUY_RESOLVED_AT=2026-10-05T00:00:00Z
 RUN uv tool install --exclude-newer "${FIRMAUY_RESOLVED_AT}" "firmauy==${FIRMAUY_VERSION}"
 
 WORKDIR /app

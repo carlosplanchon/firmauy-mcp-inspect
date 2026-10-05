@@ -35,13 +35,22 @@ jobs:
         run: uvx ruff check
 
   test:
-    name: tests (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: tests (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         # Matches requires-python (>=3.11) and the classifiers in pyproject.toml.
         python-version: ["3.11", "3.12", "3.13", "3.14"]
+        # Windows at both ends of the range rather than all four, as firmauy itself does: what
+        # differs there is the OS (path separators, symlink privileges, the console code page),
+        # not the interpreter, and the ends are where a Python difference would show first.
+        include:
+          - os: windows-latest
+            python-version: "3.11"
+          - os: windows-latest
+            python-version: "3.14"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
 

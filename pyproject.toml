@@ -45,12 +45,13 @@ dependencies = [
 # Enforced at runtime too (see _cli_version_error), because this bound only binds an install that
 # pulls firmauy in as an extra, and the documented way to run this is a separate CLI or FIRMAUY_BIN.
 #
-# Raised to 1.20.0 alongside _MIN_FIRMAUY, for a reason the semantic argument does not cover:
-# twice firmauy has raised its own floor on a dependency to close a published advisory. 1.14.3
-# took cryptography from >=49.0.0 to >=50.0.0 (GHSA-g6cj-pr64-35w5), and 1.20.0 took urllib3 to
-# >=2.8.0 (GHSA-8988-9cw3-xx77, GHSA-gh4c-6fx4-qh6g, GHSA-vxq7-64xx-v4gw). Anything older permits
-# the affected versions. This bound only helps the install that pulls firmauy in as an extra,
-# which is why the runtime check carries the same number.
+# Raised past the semantic argument twice. First for security: twice firmauy has raised its own
+# floor on a dependency to close a published advisory. 1.14.3 took cryptography from >=49.0.0 to
+# >=50.0.0 (GHSA-g6cj-pr64-35w5), and 1.20.0 took urllib3 to >=2.8.0 (GHSA-8988-9cw3-xx77,
+# GHSA-gh4c-6fx4-qh6g, GHSA-vxq7-64xx-v4gw). Anything older permits the affected versions. Then to
+# 1.21.0 for Windows, the first release that runs there; on Linux it is 1.20.0 unchanged. This
+# bound only helps the install that pulls firmauy in as an extra, which is why the runtime check
+# carries the same number.
 #
 # Capped, unlike _MIN_FIRMAUY, which is deliberately open at the top so a local install can be
 # ahead of the image's pin. The two are not the same decision. That floor governs a CLI somebody
@@ -58,7 +59,7 @@ dependencies = [
 # their back, and a major it picks on its own is the one version nobody has looked at. The runtime
 # contract check is what actually protects the answers either way, so this is the cheaper half of
 # the same guard: it fails at install time, where a version problem costs nothing.
-cli = ["firmauy>=1.20.0,<2"]
+cli = ["firmauy>=1.21.0,<2"]
 
 [project.scripts]
 firmauy-mcp-inspect = "firmauy_mcp.server:main"
