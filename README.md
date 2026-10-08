@@ -18,9 +18,10 @@ or a detached CMS `.p7s`) and validates cédula check digits. Verification runs 
 require a smart card.
 
 It exists for the one task where an assistant genuinely beats the bare CLI, **triaging a batch of
-signed documents** in plain language. Point it at a folder and it verifies every file, groups the
-results by issuing CA, and flags anything that is not VALID or whose certificate chain is not
-trusted, leaving you a summary to act on.
+signed documents** in plain language. Hand it the files in a folder and it verifies every one,
+returning a count by verdict and, per file, the verdict, the issuing CA and how its timestamps came
+out. The assistant does the grouping and points at anything that is not VALID or whose certificate
+chain is not trusted, leaving you a summary to act on.
 
 By design it **only ever inspects**. It cannot sign, never sees a PIN, and redacts the signer's
 personal data by default, so identities stay out of the model's context.
@@ -70,13 +71,14 @@ The cost is a process spawn per call, which is irrelevant next to those three.
 | `verify(path, original=None)` | Verify one signed file (PDF/PAdES, XAdES XML, detached CMS/.p7s). Returns the indication, per-signature trust, checks, and the signature timestamp. |
 | `verify_batch(paths)` | Verify many files. Returns a summary count by indication plus a compact per-file result (indication, trusted, issuing CA, and how that file's timestamps came out). |
 | `validate_ci(number)` | Validate a cédula's check digit (arithmetic consistency only, not an identity check). |
-| `doctor()` | Report the local setup status (PC/SC, PKCS#11 module, card, bundled CAs). Every check's status is reported; the card and token details are withheld, since some PKCS#11 modules use the cardholder's name as the token label. |
+| `doctor()` | Report the local setup status (PC/SC, PKCS#11 module, card, bundled CAs). Every check's status is reported; the detail of any check firmauy marks sensitive, and of any check without the flag, is withheld, since some PKCS#11 modules use the cardholder's name as the token label. |
 
 None of them takes a redaction argument: whether personal data may reach the model is set by the
 operator at startup, not chosen per call.
 
-`verify_batch` handles self-contained signatures (PDF/PAdES, XAdES XML). A detached `.p7s` needs its
-original file, so verify those one at a time with `verify(path, original=...)`.
+`verify_batch` handles self-contained signatures (PDF/PAdES, XAdES XML) and a detached `.p7s` whose
+original sits next to it under the `<x>.p7s -> <x>` convention. When the original lives elsewhere,
+verify that file on its own with `verify(path, original=...)`.
 
 Verification is offline, with certificate-chain validation up to the Uruguayan national root. A
 `VALID` result is a technical assessment, not a statement of legal validity. For authoritative
@@ -110,8 +112,9 @@ and a server that drives a subprocess it knows to be vulnerable, and runs it any
 PKCS#11 module there and reported a broken setup on a machine that was fine. On Linux it behaves
 exactly like 1.20.0, so the raise costs a Linux install nothing but the upgrade.
 
-An older CLI is **refused, not tolerated**: the server checks the version once at startup and every
-tool returns an error rather than running. This is deliberate. The packaging requirement only binds
+An older CLI is **refused, not tolerated**: the server checks the version once at startup and exits
+with a message instead of serving. A CLI that is missing altogether lets the server start, and then
+every tool returns an error rather than running. This is deliberate. The packaging requirement only binds
 an install that pulls `firmauy` in as an extra, and the documented way to run this is a separately
 installed CLI or `FIRMAUY_BIN`, neither of which pip ever sees.
 
@@ -183,7 +186,8 @@ $env:FIRMAUY_MCP_ALLOWED_EXTENSIONS = ".pdf,.xml,.p7s"
 
 Containment is checked on the resolved, canonical path (symlinks and `..` followed), so it is not
 fooled by traversal, symlink escapes, or sibling directories sharing a name prefix. The root
-allowlist also covers the `original` of a detached `.p7s`. The extension allowlist does not, because
+allowlist also covers the `original` of a detached `.p7s`, whether the model names it or the server
+derives it from the `<x>.p7s -> <x>` convention. The extension allowlist does not, because
 that original is arbitrary content.
 
 ## Install

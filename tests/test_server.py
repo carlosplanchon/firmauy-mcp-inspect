@@ -274,6 +274,60 @@ def test_verify_rejects_original_outside_roots(monkeypatch, tmp_path):
     assert called == []
 
 
+def test_verify_derives_the_original_of_a_detached_p7s_and_passes_it(monkeypatch, tmp_path):
+    root = tmp_path / "root"; root.mkdir()
+    p7s = root / "payload.zip.p7s"; p7s.write_text("x")
+    orig = root / "payload.zip"; orig.write_text("y")
+    called = []
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server, "_ALLOWED_ROOTS", (root.resolve(),))
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(
+        stdout='{"schema_version": 2, "redacted": true, "indication": "VALID", "signatures": []}',
+        capture=called))
+    out = server.verify(str(p7s))
+    assert out["indication"] == "VALID"
+    args = called[0]
+    # firmauy would derive the same file on its own; the server names it so the check above applies.
+    assert args[args.index("--original") + 1] == str(orig)
+
+
+def test_verify_rejects_a_derived_original_that_escapes_the_roots(monkeypatch, tmp_path):
+    root = tmp_path / "root"; root.mkdir()
+    outside = tmp_path / "payload.zip"; outside.write_text("y")
+    p7s = root / "payload.zip.p7s"; p7s.write_text("x")
+    link = root / "payload.zip"                     # the conventional original, pointing out
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("this account cannot create symlinks")
+    called = []
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server, "_ALLOWED_ROOTS", (root.resolve(),))
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(capture=called))
+    out = server.verify(str(p7s))
+    assert "error" in out and "original path is outside" in out["error"]
+    assert called == []                       # firmauy never got the chance to open it
+
+
+def test_verify_batch_checks_the_derived_original_too(monkeypatch, tmp_path):
+    root = tmp_path / "root"; root.mkdir()
+    outside = tmp_path / "payload.zip"; outside.write_text("y")
+    p7s = root / "payload.zip.p7s"; p7s.write_text("x")
+    link = root / "payload.zip"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("this account cannot create symlinks")
+    called = []
+    monkeypatch.setattr(server, "_FIRMAUY", "firmauy")
+    monkeypatch.setattr(server, "_ALLOWED_ROOTS", (root.resolve(),))
+    monkeypatch.setattr(server.subprocess, "run", _fake_run(capture=called))
+    out = server.verify_batch([str(p7s)])
+    assert out["summary"]["error"] == 1
+    assert "original path is outside" in out["results"][0]["error"]
+    assert called == []
+
+
 def test_extension_filter_rejects_other_type_without_shelling_out(monkeypatch, tmp_path):
     f = tmp_path / "notes.txt"; f.write_text("x")
     called = []

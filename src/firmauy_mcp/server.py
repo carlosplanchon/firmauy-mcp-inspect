@@ -299,6 +299,11 @@ def _verify_one(path: str, original: Optional[str]) -> dict:
         args.append("--redact")
     if _TSA_CA:
         args += ["--tsa-ca", str(Path(_TSA_CA).expanduser())]
+    if original is None and p.suffix == ".p7s":
+        # Without --original, firmauy derives '<x>.p7s -> <x>' itself and opens it, which would put
+        # a file past the roots check. Derive it here, by the same rule, and hand it over explicitly
+        # so it goes through the check like an original the model named.
+        original = str(p.with_suffix(""))
     if original:
         op = Path(original).expanduser()
         if not _within_allowed(op):  # roots apply to the original too; the extension filter does not
@@ -342,7 +347,9 @@ def verify(path: str, original: Optional[str] = None) -> dict:
 
     Args:
         path: the signed file to verify.
-        original: for a detached ``.p7s`` only, the original file it signs.
+        original: for a detached ``.p7s`` only, the original file it signs. When omitted, the file
+            next to it named by the ``<x>.p7s -> <x>`` convention is used, and it has to be inside
+            the allowed roots like an original named here.
     """
     return _verify_one(path, original)
 
@@ -387,7 +394,8 @@ def verify_batch(paths: list[str]) -> dict:
     Built for triaging a folder of signed documents: it counts how many are VALID / INVALID /
     INDETERMINATE / errored, and for each file reports the indication, whether it is trusted to the
     national root, and the issuing CA(s). Use ``verify`` on a single path to get the full per-check
-    detail, or to check a detached ``.p7s`` (which needs its original file and is not supported here).
+    detail. A detached ``.p7s`` is verified against the original next to it, named by the
+    ``<x>.p7s -> <x>`` convention; for an original kept elsewhere, use ``verify`` with ``original``.
     The signer's personal data is withheld, as in ``verify``.
 
     ``timestamps`` counts how that file's signature timestamps came out, keeping apart the four
